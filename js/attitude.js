@@ -11,6 +11,20 @@ export const MOUNT_FORWARD = {
   upright: [0, 0, -1], // standing up (portrait), back camera looking at the bow
 };
 
+/**
+ * Auto mounting: heading from the top edge while the screen faces up ('flat'), from the back
+ * camera while the phone stands up ('upright'). The top edge points straight up when the phone
+ * is upright, so its compass direction is undefined there and swings wildly with small tilts.
+ * upZ = world-up expressed along the screen normal (1 = screen up, 0 = screen vertical).
+ * Hysteresis around 45 degrees stops it flipping back and forth.
+ */
+export function autoMountMode(upZ, prev) {
+  const a = Math.abs(upZ);
+  if (prev === 'flat') return a < 0.62 ? 'upright' : 'flat'; // switch beyond ~52 deg tilt
+  if (prev === 'upright') return a > 0.8 ? 'flat' : 'upright'; // back below ~37 deg tilt
+  return a >= 0.71 ? 'flat' : 'upright';
+}
+
 export function rotationMatrix(alpha, beta, gamma) {
   const ca = Math.cos(alpha * D2R), sa = Math.sin(alpha * D2R);
   const cb = Math.cos(beta * D2R), sb = Math.sin(beta * D2R);

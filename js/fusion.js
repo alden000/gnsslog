@@ -7,7 +7,7 @@
 
 import { LocalFrame, haversine, bearingXY, wrap360, wrap180 } from './geo.js';
 import { HeadingKF, PositionKF } from './filters.js';
-import { headingFromOrientation, headingFromMatrix, betaGammaFromMatrix, headingRateFromUp, upInDevice } from './attitude.js';
+import { headingFromOrientation, headingFromMatrix, betaGammaFromMatrix, headingRateFromUp, upInDevice, autoMountMode } from './attitude.js';
 import { DeviationEstimator } from './deviation.js';
 
 const COMPASS_MIN_INTERVAL = 100; // ms: ~10 Hz compass corrections (samples are correlated)
@@ -34,7 +34,8 @@ export class Fusion extends EventTarget {
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
     this.skyhook = null; // { lat, lon, x, y, t, acc }
-    this.magAccuracy = null; // Android: magnetometer calibration 0 (unreliable) .. 3 (high)
+    this.magAccuracy = null;
+    this.mountMode = null; // flat | upright actually in use (resolves the 'auto' setting) // Android: magnetometer calibration 0 (unreliable) .. 3 (high)
     this.dev = new DeviationEstimator();
     this.magSum = { s: 0, c: 0, n: 0 }; // circular mean of raw compass since the last fix
     this.prevCog = null;
@@ -119,7 +120,8 @@ export class Fusion extends EventTarget {
     }
     if (alphaAbs === null) return;
 
-    this._compass(o.t, headingFromOrientation(alphaAbs, o.beta, o.gamma, this.settings.get('mount')), o.compassAcc);
+    const mode = this._mountFor(this.att.up[2]);
+    this._compass(o.t, headingFromOrientation(alphaAbs, o.beta, o.gamma, mode), o.compassAcc);
   }
 
   /**
@@ -132,9 +134,16 @@ export class Fusion extends EventTarget {
       const { beta, gamma } = betaGammaFromMatrix(R);
       this.att = { alpha: null, beta, gamma, t: e.t, up: R[2] };
       this.magAccuracy = e.magAccuracy ?? null;
-      this._compass(e.t, headingFromMatrix(R, this.settings.get('mount')), e.headingAcc);
+      this._compass(e.t, headingFromMatrix(R, this._mountFor(R[2][2])), e.headingAcc);
     }
     if (e.gyro) this.onMotion({ t: e.t, rot: { alpha: e.gyro[2], beta: e.gyro[0], gamma: e.gyro[1] } });
+  }
+
+  /** Mount actually used for this attitude: the setting, or flat/upright chosen from tilt for 'auto'. */
+  _mountFor(upZ) {
+    const m = this.settings.get('mount');
+    this.mountMode = m === 'flat' || m === 'upright' ? m : autoMountMode(upZ, this.mountMode);
+    return this.mountMode;
   }
 
   /** One magnetometer heading (magnetic, deg) of the mount; accDeg = sensor's own accuracy estimate. */
@@ -256,6 +265,7 @@ export class Fusion extends EventTarget {
       gyroBias: this.hkf.initialized ? this.hkf.bias : null,
       gyroRate: t - this.gyroT < GYRO_STALE ? this.gyroRate : null,
       compass: this.magHeadingRaw,
+      mount: this.mountMode,
       compassDev: this.settings.get('autoDeviation') && this.magHeadingRaw !== null ? this.dev.correction(this.magHeadingRaw) : 0,
       pitch: this.att ? this.att.beta : null,
       roll: this.att ? this.att.gamma : null,

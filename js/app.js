@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.6.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1023,7 +1023,7 @@ setInterval(() => {
   const st = sensors.status;
   $('#diag').textContent = [
     `GNSS ${st.gnss}${st.gnssError ? ` (${st.gnssError})` : ''} · orientation ${st.orientation} · gyro ${st.motion}`,
-    `compass (mag) ${isNum(s.compass) ? s.compass.toFixed(1) + '°' : '—'} · filtered ${isNum(s.hdg) ? s.hdg.toFixed(1) + '°T' : '—'} ±${isNum(s.hdgSigma) ? s.hdgSigma.toFixed(1) : '—'}°`,
+    `mount ${s.mount || '—'}${settings.get('mount') === 'auto' ? ' (auto)' : ''} · compass (mag) ${isNum(s.compass) ? s.compass.toFixed(1) + '°' : '—'} · filtered ${isNum(s.hdg) ? s.hdg.toFixed(1) + '°T' : '—'} ±${isNum(s.hdgSigma) ? s.hdgSigma.toFixed(1) : '—'}°`,
     `gyro yaw ${isNum(s.gyroRate) ? s.gyroRate.toFixed(2) : '—'}°/s · bias ${isNum(s.gyroBias) ? s.gyroBias.toFixed(3) : '—'}°/s · pitch ${isNum(s.pitch) ? s.pitch.toFixed(0) : '—'}° roll ${isNum(s.roll) ? s.roll.toFixed(0) : '—'}°`,
   ].join('\n');
   const d = fusion.dev;

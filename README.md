@@ -60,8 +60,8 @@ Then on the phone:
 
 1. Open the URL, **Add to Home Screen** (iOS: Share → Add to Home Screen; Android: Install app).
 2. Tap **Enable** on the Live tab (iOS asks for Motion & Orientation access; both ask for Location).
-3. Settings → set **Phone mounting** (flat with the top edge to the bow, or upright with the back
-   camera to the bow), **mounting offset** if the phone is not aligned with the keel, and the local
+3. Settings → **Phone mounting**: leave on **Auto** (top edge when the screen faces up, back camera
+   when the phone stands up), or fix it to Flat/Upright for a fixed mount; **mounting offset** if the phone is not aligned with the keel, and the local
    **magnetic declination** so headings are true.
 4. Settings → **Endpoint URL** (and auth header if needed) for cloud upload.
 
@@ -181,6 +181,7 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | `gyroRate`, `gyroBias` | Raw gyro yaw rate and estimated bias (°/s) |
 | `compass` | Raw magnetometer heading of the mount (°M) |
 | `compassDev` | Learned deviation correction applied to `compass` (°) |
+| `mount` | Phone axis used for heading on that row: `flat` (top edge) or `upright` (back camera); with the Auto setting it follows how the phone is held |
 | `pitch`, `roll` | Device beta/gamma (°) |
 | `posSigma` | Position filter 1σ (m) |
 | `gnssAcc`, `gnssAge`, `gnssNew` | Last fix accuracy (m), its age (ms), 1 if the fix is new on this row |

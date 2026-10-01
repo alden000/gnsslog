@@ -3,9 +3,10 @@
 const KEY = 'gnsslog.settings';
 
 export const DEFAULTS = {
+  v: 2, // settings schema version
   theme: 'system', // system | light | dark
   speedUnit: 'kn', // kn | ms | kmh
-  mount: 'flat', // flat | upright
+  mount: 'auto', // auto | flat | upright
   headingOffset: 0, // deg added to the phone heading to get the bow heading
   declination: 0, // deg, East positive: true = magnetic + declination
   compassSigma: 6, // deg, 1-sigma magnetometer noise used by the heading filter
@@ -31,6 +32,17 @@ export class Settings extends EventTarget {
     try {
       stored = JSON.parse(localStorage.getItem(KEY) || '{}');
     } catch {}
+    // v2: 'auto' mounting became the default. 'flat' was the old default, so a stored 'flat' is
+    // almost always just that default (it made upright phones point wildly); move it to 'auto'.
+    if ((stored.v || 1) < 2) {
+      if (stored.mount === 'flat') stored.mount = 'auto';
+      stored.v = 2;
+      if (Object.keys(stored).length > 1) {
+        try {
+          localStorage.setItem(KEY, JSON.stringify(stored));
+        } catch {}
+      }
+    }
     this.values = { ...DEFAULTS, ...stored };
   }
 
