@@ -30,6 +30,7 @@ export class Fusion extends EventTarget {
     this.compassT = 0;
     this.gyroT = 0;
     this.gyroRate = null; // last raw heading rate from the gyro, deg/s
+    this.rateLP = null; // low-pass filtered, bias-corrected rate of turn, deg/s
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
     this.skyhook = null; // { lat, lon, x, y, t, acc }
@@ -82,7 +83,7 @@ export class Fusion extends EventTarget {
     if (!m.n || cog === null || !(fix.speed > DEV_MIN_SPEED) || !(fix.acc < 20)) return;
     if (fix.t - this.compassT > 1000) return;
     if (prev === null || Math.abs(wrap180(cog - prev)) > 5) return; // course changing
-    if (this.hkf.initialized && Math.abs(this.hkf.rate) > DEV_MAX_TURN) return;
+    if (this.rateLP !== null && Math.abs(this.rateLP) > DEV_MAX_TURN) return;
     const mag = wrap360((Math.atan2(m.s, m.c) * 180) / Math.PI);
     const offsets = this.settings.get('declination') + this.settings.get('headingOffset');
     this.devResidual = wrap180(cog - offsets - mag - this.dev.correction(mag));
@@ -136,9 +137,17 @@ export class Fusion extends EventTarget {
     let rate = headingRateFromGyro(m.rot, this.att.beta, this.att.gamma);
     if (rate === null) return;
     if (this.settings.get('invertGyro')) rate = -rate;
+    const dt = this.gyroT ? (m.t - this.gyroT) / 1000 : 0;
     this.gyroRate = rate;
     this.gyroT = m.t;
+    // The filter integrates every raw sample (integration averages vibration out). The rate
+    // of turn we report is low-passed: one raw sample at 60 Hz mostly shows engine/hull
+    // vibration, not the vessel turning.
     this.hkf.propagate(m.t, rate);
+    const corrected = rate - (this.hkf.initialized ? this.hkf.bias : 0);
+    const tau = Math.max(0.05, this.settings.get('rateSmoothing'));
+    if (this.rateLP === null || !(dt > 0) || dt > 1) this.rateLP = corrected;
+    else this.rateLP += (1 - Math.exp(-dt / tau)) * (corrected - this.rateLP);
   }
 
   _propagate(t) {
@@ -206,7 +215,7 @@ export class Fusion extends EventTarget {
       hdg,
       hdgMag: hdg === null ? null : wrap360(hdg - this.settings.get('declination')),
       hdgSigma: this.hkf.initialized ? this.hkf.sigma : null,
-      hdgRate: this.hkf.initialized ? this.hkf.rate : null,
+      hdgRate: !this.hkf.initialized ? null : t - this.gyroT < GYRO_STALE && this.rateLP !== null ? this.rateLP : this.hkf.rate,
       hdgSrc: this.hkf.initialized ? (t - this.compassT < COMPASS_STALE ? 'compass' : this.headingSource) : 'none',
       gyroBias: this.hkf.initialized ? this.hkf.bias : null,
       gyroRate: t - this.gyroT < GYRO_STALE ? this.gyroRate : null,

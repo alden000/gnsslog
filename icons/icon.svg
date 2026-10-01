@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#16294F"/>
-      <stop offset="1" stop-color="#060A12"/>
+      <stop offset="0" stop-color="#0B4A4E"/>
+      <stop offset="1" stop-color="#041113"/>
     </linearGradient>
     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F6DC96"/>
-      <stop offset="0.5" stop-color="#E3B453"/>
-      <stop offset="1" stop-color="#B8862B"/>
+      <stop offset="0" stop-color="#FFBB8F"/>
+      <stop offset="0.5" stop-color="#FF8A6B"/>
+      <stop offset="1" stop-color="#F2685A"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <rect x="12" y="12" width="488" height="488" rx="102" fill="none" stroke="#E3B453" stroke-opacity="0.35" stroke-width="4"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#5AA2FF" stroke-opacity="0.35" stroke-width="10"/>
-  <circle cx="256" cy="256" r="84" fill="none" stroke="#5AA2FF" stroke-opacity="0.35" stroke-width="10"/>
+  <rect x="12" y="12" width="488" height="488" rx="102" fill="none" stroke="#2DD4BF" stroke-opacity="0.35" stroke-width="4"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#2DD4BF" stroke-opacity="0.35" stroke-width="10"/>
+  <circle cx="256" cy="256" r="84" fill="none" stroke="#2DD4BF" stroke-opacity="0.35" stroke-width="10"/>
   <path d="M256 104c62 50 92 124 92 216v84H164v-84c0-92 30-166 92-216Z" fill="url(#g)"/>
-  <circle cx="256" cy="262" r="30" fill="#0A1322"/>
+  <circle cx="256" cy="262" r="30" fill="#2A0F0B"/>
 </svg>

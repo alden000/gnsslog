@@ -4,16 +4,16 @@
 
 /* ------------------------------------------------------------------ tokens */
 :root {
-  /* Brand: "Admiralty" — blue-black canvas, gold for intent (blue/gold are complementary).
-     Gold is dark-to-light; the gradient is the only place it appears in bulk. */
-  --brand-1: #b8862b; /* deep gold */
-  --brand-2: #e3b453; /* gold */
-  --brand-3: #f6dc96; /* champagne */
-  --on-brand: #0a1322; /* navy ink on gold (white fails contrast) */
-  --success: #3ddc97;
-  --warning: #ff9f43;
-  --danger: #ff5c6c;
-  --info: #5aa2ff;
+  /* Brand: "Tidewater" — deep sea-teal canvas with coral for intent. Teal and coral sit
+     opposite each other on the wheel; coral appears only where you act. */
+  --brand-1: #f2685a; /* coral */
+  --brand-2: #ff8a6b; /* salmon */
+  --brand-3: #ffbb8f; /* apricot */
+  --on-brand: #2a0f0b; /* dark ink on coral (white fails contrast) */
+  --success: #4ade80;
+  --warning: #facc15;
+  --danger: #ff3d6e;
+  --info: #38bdf8;
   --aurora: linear-gradient(110deg, var(--brand-1), var(--brand-2) 55%, var(--brand-3));
 
   --ease-emph: cubic-bezier(0.2, 0, 0, 1);
@@ -38,77 +38,77 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
 
-  /* Dark "Deep Navy" (default) */
+  /* Dark "Deep Water" (default) */
   color-scheme: dark;
-  --canvas: #060a12;
-  --surface-1: #0b1220;
-  --surface-2: #111a2b;
-  --surface-3: #1a2539;
-  --glass: rgba(12, 20, 34, 0.72);
-  --glass-strong: rgba(15, 24, 40, 0.92);
+  --canvas: #041113;
+  --surface-1: #0a1a1d;
+  --surface-2: #0f2428;
+  --surface-3: #173236;
+  --glass: rgba(9, 27, 30, 0.72);
+  --glass-strong: rgba(12, 33, 37, 0.92);
   --hairline: rgba(255, 255, 255, 0.08);
-  --edge-hi: rgba(255, 236, 190, 0.18);
-  --text: #f2f0e9;
-  --text-2: #a8b2c6;
-  --text-3: #66738c;
-  --glow-1: rgba(31, 79, 191, 0.5);
-  --glow-2: rgba(18, 52, 128, 0.55);
-  --glow-3: rgba(200, 150, 46, 0.22);
-  --primary: #e3b453;
-  --grid: rgba(150, 170, 205, 0.13);
-  --vessel: #f2f0e9;
-  --trail: #5aa2ff;
-  --mark: #7cc4ff;
+  --edge-hi: rgba(200, 255, 245, 0.16);
+  --text: #eef6f4;
+  --text-2: #9cb9b6;
+  --text-3: #5e7d7a;
+  --glow-1: rgba(13, 148, 136, 0.45);
+  --glow-2: rgba(14, 94, 112, 0.55);
+  --glow-3: rgba(242, 104, 90, 0.2);
+  --primary: #ff8a6b;
+  --grid: rgba(156, 205, 200, 0.12);
+  --vessel: #eef6f4;
+  --trail: #2dd4bf;
+  --mark: #5eead4;
   --field: rgba(255, 255, 255, 0.05);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
-    --canvas: #f3f5f9;
+    --canvas: #f1f7f6;
     --surface-1: #ffffff;
-    --surface-2: #e9eef6;
-    --surface-3: #dbe3ef;
-    --glass: rgba(255, 255, 255, 0.78);
+    --surface-2: #e3f0ee;
+    --surface-3: #d2e5e2;
+    --glass: rgba(255, 255, 255, 0.8);
     --glass-strong: rgba(255, 255, 255, 0.95);
-    --hairline: rgba(10, 19, 34, 0.09);
+    --hairline: rgba(6, 32, 35, 0.09);
     --edge-hi: rgba(255, 255, 255, 0.9);
-    --text: #0b1424;
-    --text-2: #4a5873;
-    --text-3: #8b96aa;
-    --glow-1: rgba(170, 196, 245, 0.6);
-    --glow-2: rgba(150, 180, 238, 0.55);
-    --glow-3: rgba(243, 220, 160, 0.6);
-    --primary: #8a5e0b;
-    --grid: rgba(74, 88, 115, 0.15);
-    --vessel: #0b1424;
-    --trail: #1f5fd1;
-    --mark: #1f5fd1;
-    --field: rgba(10, 19, 34, 0.04);
+    --text: #072226;
+    --text-2: #3f5e5d;
+    --text-3: #86a19f;
+    --glow-1: rgba(153, 227, 216, 0.6);
+    --glow-2: rgba(178, 220, 232, 0.6);
+    --glow-3: rgba(255, 205, 186, 0.6);
+    --primary: #c2412f;
+    --grid: rgba(63, 94, 93, 0.15);
+    --vessel: #072226;
+    --trail: #0f766e;
+    --mark: #0e7490;
+    --field: rgba(6, 32, 35, 0.04);
   }
 }
 :root[data-theme='light'] {
   color-scheme: light;
-  --canvas: #f3f5f9;
+  --canvas: #f1f7f6;
   --surface-1: #ffffff;
-  --surface-2: #e9eef6;
-  --surface-3: #dbe3ef;
-  --glass: rgba(255, 255, 255, 0.78);
+  --surface-2: #e3f0ee;
+  --surface-3: #d2e5e2;
+  --glass: rgba(255, 255, 255, 0.8);
   --glass-strong: rgba(255, 255, 255, 0.95);
-  --hairline: rgba(10, 19, 34, 0.09);
+  --hairline: rgba(6, 32, 35, 0.09);
   --edge-hi: rgba(255, 255, 255, 0.9);
-  --text: #0b1424;
-  --text-2: #4a5873;
-  --text-3: #8b96aa;
-  --glow-1: rgba(170, 196, 245, 0.6);
-  --glow-2: rgba(150, 180, 238, 0.55);
-  --glow-3: rgba(243, 220, 160, 0.6);
-  --primary: #8a5e0b;
-  --grid: rgba(74, 88, 115, 0.15);
-  --vessel: #0b1424;
-  --trail: #1f5fd1;
-  --mark: #1f5fd1;
-  --field: rgba(10, 19, 34, 0.04);
+  --text: #072226;
+  --text-2: #3f5e5d;
+  --text-3: #86a19f;
+  --glow-1: rgba(153, 227, 216, 0.6);
+  --glow-2: rgba(178, 220, 232, 0.6);
+  --glow-3: rgba(255, 205, 186, 0.6);
+  --primary: #c2412f;
+  --grid: rgba(63, 94, 93, 0.15);
+  --vessel: #072226;
+  --trail: #0f766e;
+  --mark: #0e7490;
+  --field: rgba(6, 32, 35, 0.04);
 }
 
 /* ------------------------------------------------------------------ base */

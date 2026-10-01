@@ -6,19 +6,19 @@ case on the device, uploads it to your cloud endpoint whenever there is a connec
 top-down plot with breadcrumbs and a **Skyhook** station-keeping view.
 
 UI follows the "Aurora Ink" design rules (dark/light/system themes, glass surfaces, gradient
-only on the primary actions) remixed to an **"Admiralty" blue-black and gold** palette: navy
-canvas and glows, with complementary gold reserved for the things you act on (record, selected
-tab, switches, the vessel). The skyhook marker and breadcrumbs use blue so they read against the
-gold vessel.
+only on the primary actions) remixed to a **"Tidewater" sea-teal and coral** palette: teal and coral are complementary, so
+the deep-teal canvas stays calm while coral marks the things you act on (record, selected tab,
+switches, the vessel). Breadcrumbs and the skyhook marker are aqua so they read against the
+coral vessel.
 
 | Token | Dark | Light |
 |---|---|---|
-| Canvas | `#060A12` | `#F3F5F9` |
-| Surfaces | `#0B1220` / `#111A2B` / `#1A2539` | `#FFFFFF` / `#E9EEF6` / `#DBE3EF` |
-| Text | `#F2F0E9` / `#A8B2C6` / `#66738C` | `#0B1424` / `#4A5873` / `#8B96AA` |
-| Gold gradient | `#B8862B` → `#E3B453` → `#F6DC96` (navy ink `#0A1322` on top) | same |
-| Blue accents (trail, skyhook) | `#5AA2FF` / `#7CC4FF` | `#1F5FD1` |
-| Status | success `#3DDC97`, warning `#FF9F43`, error `#FF5C6C` | same |
+| Canvas | `#041113` | `#F1F7F6` |
+| Surfaces | `#0A1A1D` / `#0F2428` / `#173236` | `#FFFFFF` / `#E3F0EE` / `#D2E5E2` |
+| Text | `#EEF6F4` / `#9CB9B6` / `#5E7D7A` | `#072226` / `#3F5E5D` / `#86A19F` |
+| Coral gradient | `#F2685A` → `#FF8A6B` → `#FFBB8F` (ink `#2A0F0B` on top) | same; accent text `#C2412F` |
+| Aqua (trail, skyhook) | `#2DD4BF` / `#5EEAD4` | `#0F766E` / `#0E7490` |
+| Status | success `#4ADE80`, warning `#FACC15`, error `#FF3D6E` | same |
 
 All colours are tokens at the top of `css/app.css`; the canvas plot reads them at runtime.
 
@@ -126,7 +126,7 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | `vx`, `vy` | Fused velocity East/North (m/s) |
 | `sog`, `cog` | Fused speed (m/s) and course over ground (°T) |
 | `hdg`, `hdgMag` | Filtered heading, true and magnetic (°) |
-| `hdgRate` | Bias-corrected rate of turn (°/s, + = to starboard) |
+| `hdgRate` | Bias-corrected rate of turn, low-pass filtered (°/s, + = to starboard; time constant in Settings) |
 | `hdgSigma`, `hdgSrc` | Heading 1σ (°) and source (`compass`, `cog`, `none`) |
 | `gyroRate`, `gyroBias` | Raw gyro yaw rate and estimated bias (°/s) |
 | `compass` | Raw magnetometer heading of the mount (°M) |

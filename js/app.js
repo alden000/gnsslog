@@ -11,7 +11,7 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -817,7 +817,7 @@ function applyTheme() {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
   const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-  $('meta[name="theme-color"]').content = dark ? '#060A12' : '#F3F5F9';
+  $('meta[name="theme-color"]').content = dark ? '#041113' : '#F1F7F6';
   viz.refreshTheme();
   pb.viz?.refreshTheme();
 }
