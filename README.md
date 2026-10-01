@@ -50,7 +50,7 @@ npm install && npm run test:e2e   # Playwright end-to-end run with simulated sen
 ```
 
 To use it on a phone, host the files over HTTPS. The repo includes a GitHub Pages workflow
-(`.github/workflows/pages.yml`, runs on pushes to `main`): enable **Settings → Pages → Source:
+(`.github/workflows/pages.yml`, runs on pushes to `main` and the current default branch): enable **Settings → Pages → Source:
 GitHub Actions**, then open `https://<user>.github.io/gnsslog/`. Any static host works — the app
 is plain files (`index.html`, `manifest.webmanifest`, `sw.js`, `css/`, `js/`, `icons/`), no build.
 
