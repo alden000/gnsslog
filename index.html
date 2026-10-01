@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>GNSS Log</title>
+    <meta name="description" content="Vessel position and heading logger with skyhook station-keeping view." />
+    <meta name="theme-color" content="#09090F" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GNSS Log" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      try {
+        var t = JSON.parse(localStorage.getItem('gnsslog.settings') || '{}').theme;
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <div class="backdrop" aria-hidden="true"><i class="glow g1"></i><i class="glow g2"></i><i class="glow g3"></i><i class="fade"></i></div>
+
+    <main id="screens">
+      <!-- ============================================================ LIVE -->
+      <section class="screen live" id="screen-live" data-screen="live">
+        <header class="topbar reveal" style="--i: 0">
+          <div class="brand">
+            <span class="logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3.5c3 2.4 4.4 6 4.4 10.4V19H7.6v-5.1C7.6 9.5 9 5.9 12 3.5Z" /><circle cx="12" cy="12.2" r="1.6" /></svg>
+            </span>
+            <div>
+              <h1>GNSS Log</h1>
+              <p id="rec-sub" class="sub">Not recording</p>
+            </div>
+          </div>
+          <div class="chips">
+            <span class="chip" id="chip-gnss" title="GNSS"><i class="dot"></i><span class="tnum">GNSS</span></span>
+            <span class="chip" id="chip-hdg" title="Heading source"><i class="dot"></i><span>HDG</span></span>
+            <span class="chip" id="chip-sync" title="Cloud sync"><i class="dot"></i><span>Sync</span></span>
+          </div>
+        </header>
+
+        <div class="glass card perm reveal" id="perm-card" style="--i: 1" hidden>
+          <span class="icon-tile violet" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" /></svg>
+          </span>
+          <div class="perm-text">
+            <strong>Enable sensors</strong>
+            <span>GNSS position, compass and gyroscope are needed to log the vessel.</span>
+          </div>
+          <button class="btn-glass pressable" id="btn-perm">Enable</button>
+        </div>
+
+        <div class="glass strong viz reveal" style="--i: 2">
+          <canvas id="viz" aria-label="Top-down vessel plot"></canvas>
+          <div class="viz-top">
+            <span class="tag" id="viz-mode">Vessel centred</span>
+            <div class="viz-ctrls">
+              <button class="icon-btn pressable" id="btn-orient" aria-label="Toggle north-up / heading-up">N↑</button>
+              <button class="icon-btn pressable" id="btn-zoom-out" aria-label="Zoom out">−</button>
+              <button class="icon-btn pressable" id="btn-zoom-in" aria-label="Zoom in">+</button>
+              <button class="icon-btn pressable wide" id="btn-auto" aria-pressed="true">Auto</button>
+            </div>
+          </div>
+          <div class="sky-readout" id="sky-readout" hidden>
+            <span class="section-label">Distance to skyhook</span>
+            <b class="tnum" id="sky-dist">—</b>
+            <span class="tnum sky-sub" id="sky-sub">—</span>
+          </div>
+        </div>
+
+        <div class="readouts reveal" style="--i: 3">
+          <div class="tile"><span class="section-label">SOG</span><b class="tnum" id="r-sog">—</b><small id="r-sog-u">kn</small></div>
+          <div class="tile"><span class="section-label">Heading</span><b class="tnum" id="r-hdg">—</b><small id="r-hdg-src">°T</small></div>
+          <div class="tile"><span class="section-label">COG</span><b class="tnum" id="r-cog">—</b><small>°T</small></div>
+          <div class="tile"><span class="section-label">Turn</span><b class="tnum" id="r-rot">—</b><small>°/s</small></div>
+          <div class="tile"><span class="section-label">Vx (E)</span><b class="tnum" id="r-vx">—</b><small>m/s</small></div>
+          <div class="tile"><span class="section-label">Vy (N)</span><b class="tnum" id="r-vy">—</b><small>m/s</small></div>
+          <div class="tile wide2"><span class="section-label">Position</span><b class="tnum pos" id="r-pos">—</b><small class="tnum" id="r-acc">—</small></div>
+        </div>
+
+        <div class="actions reveal" style="--i: 4">
+          <button class="btn-glass pressable" id="btn-sky">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v5M12 17v5M2 12h5M17 12h5" /></svg>
+            <span id="btn-sky-label">Skyhook</span>
+          </button>
+          <button class="btn-glass pressable icon-only" id="btn-sky-clear" aria-label="Clear skyhook" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+          <button class="btn-aurora pressable" id="btn-rec">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="btn-rec-label">Start recording</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============================================================ SESSIONS -->
+      <section class="screen" id="screen-sessions" data-screen="sessions" hidden>
+        <header class="page-head reveal" style="--i: 0">
+          <h2>Sessions</h2>
+          <p class="sub">Test cases recorded on this device</p>
+        </header>
+        <div class="glass card sync-card reveal" style="--i: 1">
+          <div class="sync-row">
+            <span class="icon-tile" id="sync-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9H7Z" /></svg>
+            </span>
+            <div class="sync-text">
+              <strong id="sync-title">Cloud sync</strong>
+              <span id="sync-detail" class="tnum">—</span>
+            </div>
+            <button class="btn-glass pressable small" id="btn-sync-now">Sync now</button>
+          </div>
+          <div class="progress" id="sync-progress" hidden><i></i></div>
+        </div>
+        <div id="session-list" class="session-list"></div>
+        <p class="empty reveal" id="session-empty" style="--i: 2" hidden>No sessions yet. Start a recording on the Live tab.</p>
+      </section>
+
+      <!-- ============================================================ SETTINGS -->
+      <section class="screen" id="screen-settings" data-screen="settings" hidden>
+        <header class="page-head reveal" style="--i: 0">
+          <h2>Settings</h2>
+          <p class="sub">Sensors, display and cloud upload</p>
+        </header>
+
+        <span class="section-label reveal" style="--i: 1">Appearance</span>
+        <div class="glass card group reveal" style="--i: 1">
+          <div class="row">
+            <span>Theme</span>
+            <div class="segmented" data-setting="theme">
+              <button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
+            </div>
+          </div>
+          <div class="row">
+            <span>Speed unit</span>
+            <div class="segmented" data-setting="speedUnit">
+              <button data-v="kn">kn</button><button data-v="ms">m/s</button><button data-v="kmh">km/h</button>
+            </div>
+          </div>
+          <div class="row">
+            <span>Plot orientation</span>
+            <div class="segmented" data-setting="orientUp">
+              <button data-v="north">North-up</button><button data-v="heading">Heading-up</button>
+            </div>
+          </div>
+          <label class="row">
+            <span>Trail length <small>minutes</small></span>
+            <input class="field num" type="number" min="1" max="120" step="1" data-setting="trailMinutes" />
+          </label>
+        </div>
+
+        <span class="section-label reveal" style="--i: 2">Heading sensor</span>
+        <div class="glass card group reveal" style="--i: 2">
+          <div class="row">
+            <span>Phone mounting</span>
+            <div class="segmented" data-setting="mount">
+              <button data-v="flat">Flat</button><button data-v="upright">Upright</button>
+            </div>
+          </div>
+          <p class="hint">Flat: screen up, top edge toward the bow. Upright: portrait, back camera toward the bow.</p>
+          <label class="row">
+            <span>Mounting offset <small>° added to phone heading</small></span>
+            <input class="field num" type="number" step="0.1" data-setting="headingOffset" />
+          </label>
+          <label class="row">
+            <span>Magnetic declination <small>° East +</small></span>
+            <input class="field num" type="number" step="0.1" data-setting="declination" />
+          </label>
+          <label class="row">
+            <span>Compass noise <small>° 1σ for the filter</small></span>
+            <input class="field num" type="number" min="1" max="45" step="0.5" data-setting="compassSigma" />
+          </label>
+          <div class="row">
+            <span>Invert gyro yaw <small>only if heading lags turns</small></span>
+            <button class="switch" role="switch" data-setting="invertGyro"><i></i></button>
+          </div>
+          <div class="diag tnum" id="diag">—</div>
+        </div>
+
+        <span class="section-label reveal" style="--i: 3">Cloud upload</span>
+        <div class="glass card group reveal" style="--i: 3">
+          <label class="row col">
+            <span>Endpoint URL <small>HTTPS, receives JSON POSTs</small></span>
+            <input class="field" type="url" inputmode="url" placeholder="https://example.com/ingest" data-setting="endpoint" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="row two">
+            <label class="col">
+              <span><small>Auth header</small></span>
+              <input class="field" type="text" placeholder="Authorization" data-setting="authHeader" autocomplete="off" spellcheck="false" />
+            </label>
+            <label class="col">
+              <span><small>Value</small></span>
+              <input class="field" type="password" placeholder="Bearer …" data-setting="authValue" autocomplete="off" />
+            </label>
+          </div>
+          <label class="row col">
+            <span>Device name <small>sent with each session</small></span>
+            <input class="field" type="text" placeholder="e.g. Tender 2 – Pixel 8" data-setting="deviceName" autocomplete="off" />
+          </label>
+          <div class="row">
+            <span>Upload automatically</span>
+            <button class="switch" role="switch" data-setting="autoSync"><i></i></button>
+          </div>
+        </div>
+
+        <span class="section-label reveal" style="--i: 4">Storage</span>
+        <div class="glass card group reveal" style="--i: 4">
+          <div class="row">
+            <span>Used on device <small id="storage-detail">—</small></span>
+            <button class="btn-glass pressable small" id="btn-persist">Keep data</button>
+          </div>
+          <p class="hint" id="app-version">GNSS Log</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================================================ PLAYBACK (pushed) -->
+    <section class="screen pushed" id="screen-playback" hidden>
+      <header class="pb-head reveal" style="--i: 0">
+        <button class="icon-btn pressable" id="pb-back" aria-label="Back">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <div class="pb-title">
+          <h2 id="pb-name">Playback</h2>
+          <p class="sub tnum" id="pb-meta">—</p>
+        </div>
+      </header>
+      <div class="glass strong viz reveal" style="--i: 1">
+        <canvas id="pb-viz" aria-label="Playback plot"></canvas>
+        <div class="viz-top">
+          <span class="tag" id="pb-mode">Vessel centred</span>
+          <div class="viz-ctrls">
+            <button class="icon-btn pressable" id="pb-orient" aria-label="Toggle north-up / heading-up">N↑</button>
+            <button class="icon-btn pressable wide" id="pb-auto" aria-pressed="true">Auto</button>
+          </div>
+        </div>
+        <div class="sky-readout" id="pb-sky" hidden>
+          <span class="section-label">Distance to skyhook</span>
+          <b class="tnum" id="pb-sky-dist">—</b>
+          <span class="tnum sky-sub" id="pb-sky-sub">—</span>
+        </div>
+      </div>
+      <div class="readouts compact reveal" style="--i: 2">
+        <div class="tile"><span class="section-label">SOG</span><b class="tnum" id="pb-sog">—</b><small id="pb-sog-u">kn</small></div>
+        <div class="tile"><span class="section-label">Heading</span><b class="tnum" id="pb-hdg">—</b><small>°T</small></div>
+        <div class="tile"><span class="section-label">Vx (E)</span><b class="tnum" id="pb-vx">—</b><small>m/s</small></div>
+        <div class="tile"><span class="section-label">Vy (N)</span><b class="tnum" id="pb-vy">—</b><small>m/s</small></div>
+      </div>
+      <div class="glass card timeline reveal" style="--i: 3">
+        <div class="tl-row">
+          <button class="play pressable" id="pb-play" aria-label="Play">
+            <svg viewBox="0 0 24 24" class="i-play" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5L8 5.5Z" /></svg>
+            <svg viewBox="0 0 24 24" class="i-pause" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" /></svg>
+          </button>
+          <div class="tl-track">
+            <input type="range" id="pb-scrub" min="0" max="0" value="0" step="1" aria-label="Playback position" />
+            <div class="tl-times tnum"><span id="pb-t">00:00</span><span id="pb-clock">—</span><span id="pb-dur">00:00</span></div>
+          </div>
+        </div>
+        <div class="segmented" id="pb-speed">
+          <button data-v="1">1×</button><button data-v="2">2×</button><button data-v="5">5×</button><button data-v="10">10×</button><button data-v="30">30×</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ DOCK -->
+    <nav class="dock" aria-label="Main">
+      <button class="dock-tab pressable" data-tab="live" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.5" /><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" /></svg>
+        <span>Live</span>
+      </button>
+      <button class="dock-tab pressable" data-tab="sessions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+        <span>Sessions</span>
+      </button>
+      <button class="dock-tab pressable" data-tab="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+    <div class="sheet-scrim" id="sheet-scrim" hidden></div>
+    <div class="sheet glass strong" id="sheet" role="dialog" aria-modal="true" hidden></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+  </body>
+</html>

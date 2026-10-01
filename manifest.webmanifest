@@ -1,0 +1,19 @@
+{
+  "name": "GNSS Log — Vessel Logger",
+  "short_name": "GNSS Log",
+  "description": "Log vessel position, speed and heading at 5 Hz, with a skyhook station-keeping view.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090F",
+  "theme_color": "#09090F",
+  "categories": ["navigation", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
