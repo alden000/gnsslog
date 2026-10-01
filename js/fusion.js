@@ -136,7 +136,8 @@ export class Fusion extends EventTarget {
       this.magAccuracy = e.magAccuracy ?? null;
       this._compass(e.t, headingFromMatrix(R, this._mountFor(R[2][2])), e.headingAcc);
     }
-    if (e.gyro) this.onMotion({ t: e.t, rot: { alpha: e.gyro[2], beta: e.gyro[0], gamma: e.gyro[1] } });
+    // Native gyro is [x, y, z]; rotationRate convention is alpha = x, beta = y, gamma = z.
+    if (e.gyro) this.onMotion({ t: e.t, rot: { alpha: e.gyro[0], beta: e.gyro[1], gamma: e.gyro[2] } });
   }
 
   /** Mount actually used for this attitude: the setting, or flat/upright chosen from tilt for 'auto'. */

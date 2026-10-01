@@ -26,11 +26,18 @@ test('heading undefined when forward axis is vertical', () => {
 });
 
 test('gyro: CCW rotation of a flat phone decreases heading', () => {
-  assert.equal(headingRateFromGyro({ alpha: 10, beta: 0, gamma: 0 }, 0, 0), -10);
+  assert.equal(headingRateFromGyro({ alpha: 0, beta: 0, gamma: 10 }, 0, 0), -10); // gamma = z-axis rate
 });
 
 test('gyro: upright phone yaw comes from the device y axis', () => {
-  // Upright (beta = 90): world up is the device +y axis, so yaw = rotation about y (gamma rate).
-  const r = headingRateFromGyro({ alpha: 0, beta: 0, gamma: 12 }, 90, 0);
+  // Upright (beta = 90): world up is the device +y axis, so yaw = rotation about y (beta rate).
+  const r = headingRateFromGyro({ alpha: 0, beta: 12, gamma: 0 }, 90, 0);
   assert.ok(Math.abs(r + 12) < 1e-9);
+});
+
+test('rotationRate axes follow the W3C spec: alpha = x, beta = y, gamma = z', () => {
+  // Flat phone: only the z rate (gamma) is yaw; x/y rates are pitch/roll and must not leak in.
+  assert.equal(headingRateFromGyro({ alpha: 30, beta: 30, gamma: 0 }, 0, 0) === 0, true);
+  // Upright phone: only the y rate (beta) is yaw.
+  assert.ok(Math.abs(headingRateFromGyro({ alpha: 30, beta: 0, gamma: 30 }, 90, 0)) < 1e-9);
 });

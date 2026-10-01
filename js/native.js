@@ -9,6 +9,9 @@ export const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform()
 const cache = {};
 export function plugin(name) {
   if (!isNative) return null;
+  if (typeof Cap.registerPlugin !== 'function') {
+    throw new Error('Capacitor core (js/capacitor.js) is not loaded; rebuild with tools/build-www.mjs');
+  }
   return (cache[name] ||= Cap.registerPlugin(name));
 }
 

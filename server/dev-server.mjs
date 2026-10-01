@@ -6,7 +6,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
+// Optional second argument: directory to serve (default: the repo root), e.g. www/ for the app build.
+const root = process.argv[3] ? normalize(join(process.cwd(), process.argv[3], '/')) : fileURLToPath(new URL('..', import.meta.url));
 const port = Number(process.argv[2] || process.env.PORT || 8080);
 const TYPES = {
   '.html': 'text/html; charset=utf-8',

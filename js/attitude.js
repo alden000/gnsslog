@@ -56,9 +56,12 @@ export function betaGammaFromMatrix(R) {
   };
 }
 
-/** Heading rate (deg/s, +ve = to starboard) from device-axis gyro rates and world-up in device axes. */
+/**
+ * Heading rate (deg/s, +ve = to starboard) from device-axis gyro rates and world-up in device axes.
+ * rotationRate.alpha/beta/gamma = rates about device x/y/z (W3C DeviceMotionEventRotationRate).
+ */
 export function headingRateFromUp(rotationRate, up) {
-  const wx = rotationRate.beta, wy = rotationRate.gamma, wz = rotationRate.alpha;
+  const wx = rotationRate.alpha, wy = rotationRate.beta, wz = rotationRate.gamma;
   if (![wx, wy, wz].every(Number.isFinite)) return null;
   return -(wx * up[0] + wy * up[1] + wz * up[2]);
 }
@@ -85,10 +88,11 @@ export function upInDevice(beta, gamma) {
 
 /**
  * Heading rate (deg/s, +ve = clockwise seen from above, i.e. turning to starboard) from the
- * gyroscope. rotationRate.alpha/beta/gamma are rates about the device z/x/y axes.
+ * gyroscope. Per the W3C spec (and Chrome/Safari), rotationRate.alpha/beta/gamma are the rates
+ * about the device x/y/z axes. (Older docs describe alpha as the z rate; that is wrong.)
  */
 export function headingRateFromGyro(rotationRate, beta, gamma) {
-  const wx = rotationRate.beta, wy = rotationRate.gamma, wz = rotationRate.alpha;
+  const wx = rotationRate.alpha, wy = rotationRate.beta, wz = rotationRate.gamma;
   if (![wx, wy, wz].every(Number.isFinite)) return null;
   const u = upInDevice(beta, gamma);
   // Projection onto world-up gives the counter-clockwise yaw rate; heading is clockwise.

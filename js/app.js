@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.6.1';
+const VERSION = '0.6.2';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -444,7 +444,12 @@ sensors.addEventListener('status', renderPerm);
   } catch {}
   if (isNative) {
     // Android app: the location permission prompt is native; no tap needed for sensors.
-    await sensors.start();
+    try {
+      await sensors.start();
+    } catch (err) {
+      console.error(err);
+      toast(`Sensors failed to start: ${err.message || err}`, { kind: 'err', ms: 0 });
+    }
     renderPerm();
     if (interrupted) showResume(interrupted);
     return;

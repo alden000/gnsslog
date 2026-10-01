@@ -4,7 +4,10 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 
-const srv = spawn('node', ['server/dev-server.mjs', '8099'], { stdio: 'ignore' });
+// Serve the Android build of the web app (www/, which adds Capacitor core) like the APK does.
+import { execFileSync } from 'node:child_process';
+execFileSync('node', ['tools/build-www.mjs']);
+const srv = spawn('node', ['server/dev-server.mjs', '8099', 'www'], { stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 600));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch();
@@ -16,23 +19,23 @@ try {
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await page.addInitScript(() => {
+    // Imitates the REAL Android bridge: it provides PluginHeaders, nativePromise and nativeCallback
+    // but NOT registerPlugin (that comes from @capacitor/core, loaded by the app as js/capacitor.js).
     const log = (window.__native = { calls: [], watchers: {}, listeners: [], shared: [] });
     let nextId = 1;
-    const plugins = {
+    const impl = {
       BackgroundGeolocation: {
         addWatcher(opts, cb) {
-          const id = String(nextId++);
           log.calls.push(['addWatcher', !!opts.backgroundMessage]);
           let k = 0;
-          const timer = setInterval(() => cb({ latitude: 1.3 + ++k * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false }), 1000);
-          log.watchers[id] = timer;
-          return Promise.resolve(id);
+          const id = String(nextId);
+          log.watchers[id] = setInterval(() => cb({ latitude: 1.3 + ++k * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false }), 1000);
         },
         removeWatcher({ id }) { log.calls.push(['removeWatcher', id]); clearInterval(log.watchers[id]); delete log.watchers[id]; return Promise.resolve(); },
         openSettings() { log.calls.push(['openSettings']); return Promise.resolve(); },
       },
       VesselSensors: {
-        addListener(name, cb) { log.listeners.push(cb); return Promise.resolve({ remove() {} }); },
+        addListener(opts, cb) { if (opts.eventName === 'motion') log.listeners.push(cb); },
         start() {
           log.calls.push(['sensors.start']);
           // Flat phone heading 045 (alpha 315): R = Rz(315); gyro quiet. 25 Hz, like the plugin.
@@ -49,7 +52,20 @@ try {
       Filesystem: { writeFile({ path, data }) { log.shared.push({ path, size: data.length, head: data.slice(0, 40) }); return Promise.resolve({ uri: 'file:///cache/' + path }); } },
       Share: { share(o) { log.calls.push(['share', o.files[0]]); return Promise.resolve(); } },
     };
-    window.Capacitor = { isNativePlatform: () => true, registerPlugin: (n) => plugins[n] };
+    const callbackMethods = { BackgroundGeolocation: ['addWatcher'], VesselSensors: ['addListener'] };
+    window.androidBridge = { postMessage() {} };
+    window.Capacitor = {
+      PluginHeaders: Object.keys(impl).map((name) => ({
+        name,
+        methods: Object.keys(impl[name]).map((m) => ({ name: m, rtype: (callbackMethods[name] || []).includes(m) ? 'callback' : 'promise' })),
+      })),
+      nativePromise: (plugin, method, options) => impl[plugin][method](options || {}),
+      nativeCallback: (plugin, method, options, cb) => {
+        const id = String(nextId++);
+        impl[plugin][method](options || {}, cb);
+        return id;
+      },
+    };
   });
   await page.goto('http://localhost:8099/');
   await page.waitForFunction(() => document.querySelector('#r-pos').textContent.includes('°N'), null, { timeout: 10000 });
