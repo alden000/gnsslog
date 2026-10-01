@@ -11,7 +11,7 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 
-const VERSION = '0.1.1';
+const VERSION = '0.2.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -389,16 +389,46 @@ function renderPerm() {
 }
 sensors.addEventListener('status', renderPerm);
 
-// Start what we can without a gesture: GNSS when permission was already granted, and
-// motion sensors on browsers that do not need an explicit permission prompt.
+// Start what we can without a gesture, then ask for the rest with a clear start-up prompt
+// (iOS, and newer Android Chrome, only grant motion sensors from a tap).
 (async () => {
+  let geoGranted = false;
   try {
     const p = await navigator.permissions?.query({ name: 'geolocation' });
-    if (p?.state === 'granted') sensors.startGnss();
+    geoGranted = p?.state === 'granted';
   } catch {}
+  if (geoGranted) sensors.startGnss();
   if (!sensors.needsMotionPermission) sensors.startMotion();
   renderPerm();
+  if (sensors.needsMotionPermission || !geoGranted) showOnboarding();
 })();
+
+function showOnboarding() {
+  const row = (icon, title, text) => `
+    <div class="ob-row"><span class="icon-tile" aria-hidden="true">${icon}</span>
+      <div><strong>${title}</strong><span>${text}</span></div></div>`;
+  openSheet(
+    `<h3>Start sensors</h3>
+     <p class="sub">GNSS Log uses the phone as the vessel's sensor. Allow these when asked.</p>
+     <div class="stack">
+       ${row('<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" /></svg>', 'Location (GNSS)', 'Position, speed and course')}
+       ${row('<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" /></svg>', 'Compass', 'Magnetometer heading')}
+       ${row('<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5" /></svg>', 'Gyroscope', 'Smooth heading and rate of turn')}
+       <p class="hint">Keep magnets (MagSafe rings, magnetic mounts) and steel away from the phone; they bend the compass.</p>
+       <button class="btn-aurora pressable" data-act="go"><span>Enable sensors</span></button>
+       <button class="btn-glass pressable" data-act="later">Not now</button>
+     </div>`,
+    (sheet, close) => {
+      $('[data-act="go"]', sheet).onclick = async () => {
+        await enableSensors();
+        close();
+        const st = sensors.status;
+        if (st.orientation === 'denied' || st.motion === 'denied') toast('Motion access was declined — heading will use GNSS course', { kind: 'warn', ms: 5000 });
+      };
+      $('[data-act="later"]', sheet).onclick = () => close();
+    },
+  );
+}
 
 // ---------------------------------------------------------------- tabs / navigation
 
@@ -422,6 +452,7 @@ function showTab(tab) {
     r.style.animation = '';
   }
   currentTab = tab;
+  window.scrollTo(0, 0);
   for (const b of $$('.dock-tab')) {
     if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -827,7 +858,8 @@ settings.addEventListener('change', (e) => {
   renderSettings();
   if (k === 'theme') applyTheme();
   if (k === 'orientUp') renderOrient();
-  if (k === 'mount' || k === 'invertGyro') fusion.hkf.reset();
+  if (k === 'mount') fusion.resetDeviation(); // different geometry, different deviation
+  if (k === 'invertGyro' || k === 'autoDeviation') fusion.hkf.reset();
   if (['endpoint', 'authHeader', 'authValue', 'autoSync'].includes(k)) sync.kick(true);
 });
 
@@ -856,7 +888,21 @@ setInterval(() => {
     `compass (mag) ${isNum(s.compass) ? s.compass.toFixed(1) + '°' : '—'} · filtered ${isNum(s.hdg) ? s.hdg.toFixed(1) + '°T' : '—'} ±${isNum(s.hdgSigma) ? s.hdgSigma.toFixed(1) : '—'}°`,
     `gyro yaw ${isNum(s.gyroRate) ? s.gyroRate.toFixed(2) : '—'}°/s · bias ${isNum(s.gyroBias) ? s.gyroBias.toFixed(3) : '—'}°/s · pitch ${isNum(s.pitch) ? s.pitch.toFixed(0) : '—'}° roll ${isNum(s.roll) ? s.roll.toFixed(0) : '—'}°`,
   ].join('\n');
+  const d = fusion.dev;
+  const on = settings.get('autoDeviation');
+  $('#dev-detail').textContent = !on
+    ? 'Off'
+    : d.n === 0
+      ? 'Learns while running straight above 4 kn'
+      : `${d.n} s learned · ${d.sectors}/8 headings · now ${fmtSigned(s.compassDev, 1)}°`;
+  $('#dev-check').textContent = isNum(fusion.devResidual)
+    ? `Compass vs GNSS course (last straight run): ${fmtSigned(fusion.devResidual, 1)}°`
+    : 'Compass vs GNSS course: needs a straight run above 4 kn';
 }, 500);
+$('#btn-dev-reset').onclick = () => {
+  fusion.resetDeviation();
+  toast('Compass correction reset');
+};
 
 $('#app-version').textContent = `GNSS Log ${VERSION} · logging at 5 Hz`;
 

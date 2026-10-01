@@ -289,7 +289,7 @@ export class Visualizer {
       }
     }
 
-    // Velocity vector: where the vessel will be in 30 s.
+    // Velocity vector (dashed): where the vessel will be in 30 s at the current speed and course.
     if (Number.isFinite(vessel.vx) && Math.hypot(vessel.vx, vessel.vy) > 0.2) {
       const [ex, ey] = toScreen(vessel.x + vessel.vx * 30, vessel.y + vessel.vy * 30);
       ctx.strokeStyle = c.text2;
@@ -301,6 +301,12 @@ export class Visualizer {
       ctx.lineTo(ex, ey);
       ctx.stroke();
       ctx.setLineDash([]);
+      if (Math.hypot(ex - vx, ey - vy) > 40) {
+        ctx.fillStyle = c.text2;
+        ctx.font = '700 10px "Plus Jakarta Sans", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('30 s', ex, ey - 6);
+      }
       ctx.globalAlpha = 1;
     }
 

@@ -10,6 +10,7 @@ export const DEFAULTS = {
   declination: 0, // deg, East positive: true = magnetic + declination
   compassSigma: 6, // deg, 1-sigma magnetometer noise used by the heading filter
   invertGyro: false,
+  autoDeviation: true, // learn compass deviation (magnets, steel) from GNSS course
   orientUp: 'north', // north | heading (visualiser)
   trailMinutes: 10,
   endpoint: '',

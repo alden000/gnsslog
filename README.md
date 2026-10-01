@@ -28,10 +28,11 @@ All colours are tokens at the top of `css/app.css`; the canvas plot reads them a
 |---|---|
 | Sensors | GNSS via the Geolocation API (high accuracy), magnetometer heading via `deviceorientationabsolute` (Android) / `webkitCompassHeading` (iOS), gyroscope via `devicemotion`. |
 | Heading filter | 2-state Kalman filter (heading, gyro bias). The gyro yaw rate (projected onto the vertical, so it works when the phone is tilted) drives the prediction; the compass corrects it with innovation gating against magnetic disturbances. With no compass it falls back to GNSS course over ground while making way. |
+| Compass deviation | Learns heading-dependent compass error (magnets such as MagSafe rings, steel, mounts) from GNSS course while running straight above ~4 kn, using the ship's-compass model A + B·sinθ + C·cosθ + D·sin2θ + E·cos2θ. Applied to the compass before the heading filter. Toggle and reset in Settings → Heading sensor; it also absorbs average crab angle, so reset it if you change the mount. |
 | Position filter | 4-state constant-velocity Kalman filter (x, y, vx, vy) in a local East/North frame. Fuses GNSS position and GNSS (Doppler) velocity and gives a smooth 5 Hz track from a ~1 Hz receiver. |
 | Logging | 5 Hz on a drift-free 200 ms grid. Each row has the fused state and the raw inputs (see [columns](#sample-columns)). Start/stop with a name and notes per test case. Sessions left open by a crash or a killed tab are closed on the next launch and marked *interrupted*. |
 | Skyhook | Marks the current fused position. The plot recentres on the spot, draws a line to the vessel and shows the live distance and bearing. Every mark/clear is logged with time and position (also when a recording starts with a spot already set). |
-| Visualiser | Vessel-centred (or skyhook-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, 30 s velocity vector, range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
+| Visualiser | Vessel-centred (or skyhook-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, dashed 30 s velocity vector (where the vessel will be in 30 s on its current course and speed), range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
 | Storage | IndexedDB on the device. "Keep data" asks the browser for persistent storage. |
 | Sync | Chunked JSON POSTs to your endpoint, resumable per session, retried with back-off, triggered when online, every 20 s, after a stop, or with "Sync now". Optional auth header. |
 | Playback | Replays any session on the same plot with a scrubber and 1–30× speed, including skyhook marks at the time they were made. |
@@ -129,6 +130,7 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | `hdgSigma`, `hdgSrc` | Heading 1σ (°) and source (`compass`, `cog`, `none`) |
 | `gyroRate`, `gyroBias` | Raw gyro yaw rate and estimated bias (°/s) |
 | `compass` | Raw magnetometer heading of the mount (°M) |
+| `compassDev` | Learned deviation correction applied to `compass` (°) |
 | `pitch`, `roll` | Device beta/gamma (°) |
 | `posSigma` | Position filter 1σ (m) |
 | `gnssAcc`, `gnssAge`, `gnssNew` | Last fix accuracy (m), its age (ms), 1 if the fix is new on this row |

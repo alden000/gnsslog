@@ -121,6 +121,12 @@ html,
 body {
   margin: 0;
   height: 100%;
+  width: 100%;
+  /* App shell: the window itself never scrolls; each screen scrolls vertically inside. */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 body {
   background: var(--canvas);
@@ -594,11 +600,14 @@ textarea.field {
   position: relative;
   z-index: 1;
   height: 100%;
+  overflow: hidden; /* clip the sideways tab transition */
 }
 .screen {
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   padding: calc(var(--safe-t) + 14px) var(--gutter) calc(var(--dock-h) + var(--safe-b) + 32px);
   display: flex;
@@ -1220,6 +1229,21 @@ input[type='range']::-moz-range-thumb {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+.ob-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ob-row div {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.ob-row strong {
+  font-size: 15px;
+  color: var(--text);
 }
 .stats {
   display: grid;

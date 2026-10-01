@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <title>GNSS Log</title>
     <meta name="description" content="Vessel position and heading logger with skyhook station-keeping view." />
     <meta name="theme-color" content="#060A12" />
@@ -187,6 +187,14 @@
           <div class="row">
             <span>Invert gyro yaw <small>only if heading lags turns</small></span>
             <button class="switch" role="switch" data-setting="invertGyro"><i></i></button>
+          </div>
+          <div class="row">
+            <span>Auto-correct compass <small id="dev-detail">Learns from GNSS course while running straight</small></span>
+            <button class="switch" role="switch" data-setting="autoDeviation"><i></i></button>
+          </div>
+          <div class="row">
+            <span><small class="tnum" id="dev-check">—</small></span>
+            <button class="btn-glass pressable small" id="btn-dev-reset">Reset</button>
           </div>
           <div class="diag tnum" id="diag">—</div>
         </div>

@@ -9,7 +9,7 @@ const FLUSH_EVERY = SAMPLE_HZ; // ~1 s of samples per write
 export const SAMPLE_COLUMNS = [
   'seq', 't', 'iso',
   'lat', 'lon', 'x', 'y', 'vx', 'vy', 'sog', 'cog',
-  'hdg', 'hdgMag', 'hdgRate', 'hdgSigma', 'hdgSrc', 'gyroRate', 'gyroBias', 'compass', 'pitch', 'roll',
+  'hdg', 'hdgMag', 'hdgRate', 'hdgSigma', 'hdgSrc', 'gyroRate', 'gyroBias', 'compass', 'compassDev', 'pitch', 'roll',
   'posSigma', 'gnssAcc', 'gnssAge', 'gnssNew', 'gnssT', 'gnssLat', 'gnssLon', 'gnssAlt', 'gnssSpeed', 'gnssCog',
   'skyDist', 'skyBrg',
 ];
@@ -39,6 +39,7 @@ export function sampleFromState(s, sid, seq, lastGnssT) {
     gyroRate: r(s.gyroRate, 3),
     gyroBias: r(s.gyroBias, 4),
     compass: r(s.compass, 2),
+    compassDev: r(s.compassDev, 2),
     pitch: r(s.pitch, 2),
     roll: r(s.roll, 2),
     posSigma: r(s.posSigma, 2),

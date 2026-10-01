@@ -1,7 +1,7 @@
 // Service worker: offline app shell (cache-first, versioned) + runtime cache for fonts.
 // Uploads (POST) and any other cross-origin request are never intercepted.
 
-const VERSION = 'gnsslog-v0.1.1';
+const VERSION = 'gnsslog-v0.2.0';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const SHELL = [
   'js/app.js',
   'js/attitude.js',
   'js/db.js',
+  'js/deviation.js',
   'js/export.js',
   'js/filters.js',
   'js/fusion.js',

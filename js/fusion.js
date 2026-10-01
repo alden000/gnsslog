@@ -8,11 +8,14 @@
 import { LocalFrame, haversine, bearingXY, wrap360, wrap180 } from './geo.js';
 import { HeadingKF, PositionKF } from './filters.js';
 import { headingFromOrientation, headingRateFromGyro } from './attitude.js';
+import { DeviationEstimator } from './deviation.js';
 
 const COMPASS_MIN_INTERVAL = 100; // ms: ~10 Hz compass corrections (samples are correlated)
 const GYRO_STALE = 500; // ms
 const COMPASS_STALE = 3000; // ms
 const COG_MIN_SPEED = 1.0; // m/s: below this GNSS course is noise
+const DEV_MIN_SPEED = 2.0; // m/s (~4 kn): learn compass deviation only when making way
+const DEV_MAX_TURN = 3; // deg/s: ...and running straight
 
 export class Fusion extends EventTarget {
   constructor(settings) {
@@ -30,6 +33,10 @@ export class Fusion extends EventTarget {
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
     this.skyhook = null; // { lat, lon, x, y, t, acc }
+    this.dev = new DeviationEstimator();
+    this.magSum = { s: 0, c: 0, n: 0 }; // circular mean of raw compass since the last fix
+    this.prevCog = null;
+    this.devResidual = null; // last (COG - corrected compass), for diagnostics
     this._restoreSkyhook();
   }
 
@@ -56,12 +63,36 @@ export class Fusion extends EventTarget {
       }
     }
 
+    this._learnDeviation(fix);
+
     // Course over ground as a heading fallback when there is no magnetometer.
     if (fix.t - this.compassT > COMPASS_STALE && fix.speed > COG_MIN_SPEED && fix.cog !== null) {
       this._propagate(fix.t);
       this.hkf.update(fix.cog, 15 * 15);
       this.headingSource = 'cog';
     }
+  }
+
+  _learnDeviation(fix) {
+    const m = this.magSum;
+    this.magSum = { s: 0, c: 0, n: 0 };
+    const cog = fix.cog;
+    const prev = this.prevCog;
+    this.prevCog = cog;
+    if (!m.n || cog === null || !(fix.speed > DEV_MIN_SPEED) || !(fix.acc < 20)) return;
+    if (fix.t - this.compassT > 1000) return;
+    if (prev === null || Math.abs(wrap180(cog - prev)) > 5) return; // course changing
+    if (this.hkf.initialized && Math.abs(this.hkf.rate) > DEV_MAX_TURN) return;
+    const mag = wrap360((Math.atan2(m.s, m.c) * 180) / Math.PI);
+    const offsets = this.settings.get('declination') + this.settings.get('headingOffset');
+    this.devResidual = wrap180(cog - offsets - mag - this.dev.correction(mag));
+    if (this.settings.get('autoDeviation')) this.dev.update(mag, wrap180(cog - offsets - mag));
+  }
+
+  resetDeviation() {
+    this.dev.reset();
+    this.devResidual = null;
+    this.hkf.reset();
   }
 
   onOrientation(o) {
@@ -86,10 +117,14 @@ export class Fusion extends EventTarget {
     const mag = headingFromOrientation(alphaAbs, o.beta, o.gamma, this.settings.get('mount'));
     if (mag === null) return;
     this.magHeadingRaw = mag;
+    this.magSum.s += Math.sin((mag * Math.PI) / 180);
+    this.magSum.c += Math.cos((mag * Math.PI) / 180);
+    this.magSum.n++;
     if (o.t - this.compassT < COMPASS_MIN_INTERVAL) return;
     this.compassT = o.t;
 
-    const trueHdg = wrap360(mag + this.settings.get('declination') + this.settings.get('headingOffset'));
+    const dev = this.settings.get('autoDeviation') ? this.dev.correction(mag) : 0;
+    const trueHdg = wrap360(mag + dev + this.settings.get('declination') + this.settings.get('headingOffset'));
     const sd = o.compassAcc > 0 ? Math.max(this.settings.get('compassSigma'), o.compassAcc) : this.settings.get('compassSigma');
     this._propagate(o.t);
     this.hkf.update(trueHdg, sd * sd);
@@ -176,6 +211,7 @@ export class Fusion extends EventTarget {
       gyroBias: this.hkf.initialized ? this.hkf.bias : null,
       gyroRate: t - this.gyroT < GYRO_STALE ? this.gyroRate : null,
       compass: this.magHeadingRaw,
+      compassDev: this.settings.get('autoDeviation') && this.magHeadingRaw !== null ? this.dev.correction(this.magHeadingRaw) : 0,
       pitch: this.att ? this.att.beta : null,
       roll: this.att ? this.att.gamma : null,
       gnss: g,
