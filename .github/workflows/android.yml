@@ -18,7 +18,20 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      # Release signing when the repo has the secrets (Settings -> Secrets and variables -> Actions):
+      #   GNSSLOG_KEYSTORE_B64      base64 of gnsslog-release.p12
+      #   GNSSLOG_KEYSTORE_PASSWORD its password
+      # Without them a debug-signed APK is built.
+      - name: Release key
+        env:
+          KS_B64: ${{ secrets.GNSSLOG_KEYSTORE_B64 }}
+        if: ${{ env.KS_B64 != '' }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          echo "GNSSLOG_KEYSTORE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
       - name: Build APK
+        env:
+          GNSSLOG_KEYSTORE_PASSWORD: ${{ secrets.GNSSLOG_KEYSTORE_PASSWORD }}
         run: bash tools/build-android.sh
       - uses: actions/upload-artifact@v4
         with:

@@ -9,3 +9,9 @@ android/local.properties
 android/app/src/main/assets/public/
 android/capacitor-cordova-android-plugins/
 *.apk
+# Release signing material must never be committed (the debug keystore and lineage are public on purpose)
+*.p12
+*.jks
+!android/app/gnsslog-debug.keystore
+keystore.properties
+password.txt

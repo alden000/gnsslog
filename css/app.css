@@ -799,6 +799,11 @@ textarea.field {
   left: 12px;
   bottom: 12px;
 }
+.trail-btn {
+  position: absolute;
+  left: 54px;
+  bottom: 12px;
+}
 .map-btn.on {
   color: var(--on-brand);
   border-color: transparent;

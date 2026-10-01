@@ -81,6 +81,13 @@ try {
   await page.click('#viz-mode');
   assert.equal(await page.textContent('#viz-mode'), 'Mark centred');
 
+  // Clear trail is display-only: recording continues and no samples are lost.
+  const seqBefore = await page.evaluate(() => window.gnsslog.recorder.seq);
+  await page.click('#btn-trail-clear');
+  await sleep(1000);
+  const seqAfter = await page.evaluate(() => window.gnsslog.recorder.seq);
+  assert.ok(seqAfter >= seqBefore + 4, `still recording after clearing the trail (${seqBefore} -> ${seqAfter})`);
+  await page.screenshot({ path: join(out, '2c-trail-cleared.png') });
   await page.click('#btn-sky-clear');
   await sleep(1200);
   await page.click('#btn-rec');

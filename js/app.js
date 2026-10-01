@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -239,6 +239,12 @@ function renderCenterButton(btn, hasMark, centerOn) {
   btn.classList.toggle('sky', onMark);
   btn.title = hasMark ? `Tap to centre on the ${onMark ? 'vessel' : 'marked location'}` : '';
 }
+// Clear trail: display only. The recorder and stored samples are not touched.
+$('#btn-trail-clear').onclick = () => {
+  trail.length = 0;
+  toast('Trail cleared on the plot · recorded data is kept', { ms: 2200 });
+};
+
 $('#viz-mode').onclick = () => {
   liveCenter = liveCenter === 'vessel' ? 'mark' : 'vessel';
   renderCenterButton($('#viz-mode'), true, liveCenter); // update now, not on the next tick
@@ -785,6 +791,7 @@ async function openPlayback(id) {
   pb.t = pb.t0;
   pb.playing = false;
   pb.centerOn = 'mark';
+  pb.trailFrom = 0; // index the drawn trail starts from (Clear trail moves it to the playhead)
 
   $('#pb-name').textContent = session.name;
   $('#pb-meta').textContent = `${fmtDate(session.startedAt)} · ${samples.length} samples · ${fmtDuration(pb.t1 - pb.t0)}`;
@@ -877,7 +884,7 @@ function playbackFrame() {
   // Trail: last N minutes up to the playhead.
   const cap = trailCap();
   const tr = [];
-  for (let k = Math.max(0, i - cap); k <= i; k++) {
+  for (let k = Math.max(0, i - cap, pb.trailFrom ?? 0); k <= i; k++) {
     if (!pb.pts[k]) continue;
     if (k > 0 && pb.samples[k].t - pb.samples[k - 1].t > 2000) tr.push(null); // gap: break the line
     tr.push(pb.pts[k]);
@@ -912,18 +919,26 @@ function renderPlayPause() {
   $('#pb-play').setAttribute('aria-label', pb.playing ? 'Pause' : 'Play');
 }
 $('#pb-back').onclick = closePlayback;
+$('#pb-trail-clear').onclick = () => {
+  pb.trailFrom = sampleIndexAt(pb.t);
+  toast('Trail cleared on the plot · session data is kept', { ms: 2200 });
+};
 $('#pb-mode').onclick = () => {
   pb.centerOn = pb.centerOn === 'vessel' ? 'mark' : 'vessel';
   renderCenterButton($('#pb-mode'), true, pb.centerOn);
   pb.viz.setAuto(true);
 };
 $('#pb-play').onclick = () => {
-  if (!pb.playing && pb.t >= pb.t1) pb.t = pb.t0;
+  if (!pb.playing && pb.t >= pb.t1) {
+    pb.t = pb.t0;
+    pb.trailFrom = 0;
+  }
   pb.playing = !pb.playing;
   renderPlayPause();
 };
 $('#pb-scrub').oninput = (e) => {
   pb.t = pb.t0 + Number(e.target.value);
+  if (sampleIndexAt(pb.t) < pb.trailFrom) pb.trailFrom = 0;
 };
 $('#pb-auto').onclick = () => pb.viz.setAuto(!pb.viz.auto);
 $('#pb-orient').onclick = $('#btn-orient').onclick;

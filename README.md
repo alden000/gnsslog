@@ -33,7 +33,7 @@ All colours are tokens at the top of `css/app.css`; the canvas plot reads them a
 | Position filter | 4-state constant-velocity Kalman filter (x, y, vx, vy) in a local East/North frame. Fuses GNSS position and GNSS (Doppler) velocity and gives a smooth 5 Hz track from a ~1 Hz receiver. |
 | Logging | 5 Hz on a drift-free 200 ms grid. Each row has the fused state and the raw inputs (see [columns](#sample-columns)). Start/stop with a name and notes per test case. Sessions left open by a crash or a killed tab are closed on the next launch and marked *interrupted*. |
 | Mark Location | Marks the current fused position. The plot recentres on the mark (tap the **Mark centred / Vessel centred** tag to switch the centre), draws a line to the vessel and shows the live distance and bearing. Every mark/clear is logged with time and position (also when a recording starts with a mark already set). |
-| Visualiser | Vessel-centred (or mark-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, dashed 30 s velocity vector (where the vessel will be in 30 s on its current course and speed), range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
+| Visualiser | Clear-trail button (display only; recorded data is untouched). Vessel-centred (or mark-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, dashed 30 s velocity vector (where the vessel will be in 30 s on its current course and speed), range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
 | Map background | Optional **Street** or **Satellite** map under the live plot and playback (map button on the plot, or Settings → Map), plus OpenSeaMap **nautical marks** (buoys, beacons, lights). Tiles are placed through the same local frame as the track, so they line up exactly and rotate with heading-up. Street is drawn inverted in dark theme. The web app keeps viewed tiles (up to ~3,000) for offline use. Tiles: Esri World Street Map / World Imagery, OpenSeaMap; credits are shown on the plot. |
 | Storage | IndexedDB on the device. "Keep data" asks the browser for persistent storage. |
 | Sync | Chunked JSON POSTs to your endpoint, resumable per session, retried with back-off, triggered when online, every 20 s, after a stop, or with "Sync now". Optional auth header. |
@@ -115,11 +115,16 @@ powershell -ExecutionPolicy Bypass -File tools\build-android.ps1 -Install   # al
 Linux/macOS: `ANDROID_HOME=… bash tools/build-android.sh`. GitHub Actions also builds the APK on
 every push (`.github/workflows/android.yml`, artifact `gnss-log-apk`).
 
-APKs are signed with a shared debug key (`android/app/gnsslog-debug.keystore`, committed on
-purpose) so a new build installs over the old one **without losing recorded sessions**. Install on
-the phone: copy the APK over, open it, allow "Install unknown apps" for the file manager. On first
-launch allow Location ("While using the app" is enough), Notifications, and in the recording
-sheet tap **Allow unrestricted** for battery.
+**Signing.** Release APKs are signed with the private release key (`gnsslog-release.p12`, kept
+outside the repo) together with `android/app/signing-lineage.bin`, a public proof that the earlier
+debug key (`android/app/gnsslog-debug.keystore`, committed) handed over to it (APK Signature Scheme
+v3 key rotation, Android 9+). Phones that installed a debug-signed build therefore accept the first
+release build as a normal update and keep their sessions; afterwards a debug-signed APK can no
+longer update them. Point the build at the key with `GNSSLOG_KEYSTORE` and
+`GNSSLOG_KEYSTORE_PASSWORD` (or `GNSSLOG_KEYSTORE_PASSWORD_FILE`); without them the scripts build a
+debug APK. For CI release builds add the repo secrets `GNSSLOG_KEYSTORE_B64` (base64 of the
+keystore) and `GNSSLOG_KEYSTORE_PASSWORD`. **Back the keystore and password up**: without them no
+future update can be installed over the release build.
 
 After changing web code, `npm run android:sync` copies it into the Android project.
 
