@@ -9,6 +9,7 @@ import { LocalFrame, haversine, bearingXY, wrap360, wrap180 } from './geo.js';
 import { HeadingKF, PositionKF } from './filters.js';
 import { headingFromOrientation, headingFromMatrix, betaGammaFromMatrix, headingRateFromUp, upInDevice, autoMountMode } from './attitude.js';
 import { DeviationEstimator } from './deviation.js';
+import { StillDetector } from './still.js';
 
 const COMPASS_MIN_INTERVAL = 100; // ms: ~10 Hz compass corrections (samples are correlated)
 const GYRO_STALE = 500; // ms
@@ -16,6 +17,8 @@ const COMPASS_STALE = 3000; // ms
 const COG_MIN_SPEED = 1.0; // m/s: below this GNSS course is noise
 const DEV_MIN_SPEED = 2.0; // m/s (~4 kn): learn compass deviation only when making way
 const DEV_MAX_TURN = 3; // deg/s: ...and running straight
+const STILL_MAX_SPEED = 0.5; // m/s: GNSS must agree the phone is not moving before a zero-rate update
+const ZERO_RATE_SIGMA = 0.02; // deg/s: floor on the zero-rate bias measurement
 
 export class Fusion extends EventTarget {
   constructor(settings) {
@@ -37,6 +40,8 @@ export class Fusion extends EventTarget {
     this.magAccuracy = null;
     this.mountMode = null; // flat | upright actually in use (resolves the 'auto' setting) // Android: magnetometer calibration 0 (unreliable) .. 3 (high)
     this.dev = new DeviationEstimator();
+    this.stillDet = new StillDetector();
+    this.stillT = 0; // last zero-rate (still) bias update
     this.magSum = { s: 0, c: 0, n: 0 }; // circular mean of raw compass since the last fix
     this.prevCog = null;
     this.devResidual = null; // last (COG - corrected compass), for diagnostics
@@ -151,6 +156,7 @@ export class Fusion extends EventTarget {
   _compass(t, mag, accDeg) {
     if (mag === null) return;
     this.magHeadingRaw = mag;
+    this.stillDet.addCompass(t, mag);
     this.magSum.s += Math.sin((mag * Math.PI) / 180);
     this.magSum.c += Math.cos((mag * Math.PI) / 180);
     this.magSum.n++;
@@ -177,10 +183,20 @@ export class Fusion extends EventTarget {
     // of turn we report is low-passed: one raw sample at 60 Hz mostly shows engine/hull
     // vibration, not the vessel turning.
     this.hkf.propagate(m.t, rate);
+    this._zeroRate(m.t, rate);
     const corrected = rate - (this.hkf.initialized ? this.hkf.bias : 0);
     const tau = Math.max(0.05, this.settings.get('rateSmoothing'));
     if (this.rateLP === null || !(dt > 0) || dt > 1) this.rateLP = corrected;
     else this.rateLP += (1 - Math.exp(-dt / tau)) * (corrected - this.rateLP);
+  }
+
+  /** Lying still: the mean gyro rate is the bias, so feed it to the heading filter directly. */
+  _zeroRate(t, rate) {
+    const z = this.stillDet.addRate(t, rate);
+    if (!z) return;
+    const g = this.gnss;
+    if (g && t - g.t < 5000 && g.speed !== null && g.speed > STILL_MAX_SPEED) return;
+    if (this.hkf.updateBias(z.mean, z.varMean + ZERO_RATE_SIGMA ** 2)) this.stillT = t;
   }
 
   _propagate(t) {
@@ -264,6 +280,7 @@ export class Fusion extends EventTarget {
       hdgRate: !this.hkf.initialized ? null : t - this.gyroT < GYRO_STALE && this.rateLP !== null ? this.rateLP : this.hkf.rate,
       hdgSrc: this.hkf.initialized ? (t - this.compassT < COMPASS_STALE ? 'compass' : this.headingSource) : 'none',
       gyroBias: this.hkf.initialized ? this.hkf.bias : null,
+      still: t - this.stillT < 2000,
       gyroRate: t - this.gyroT < GYRO_STALE ? this.gyroRate : null,
       compass: this.magHeadingRaw,
       mount: this.mountMode,

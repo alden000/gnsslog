@@ -110,6 +110,26 @@ export class HeadingKF {
     return true;
   }
 
+  /**
+   * Direct measurement z (deg/s) of the gyro bias with variance r, e.g. the mean gyro rate
+   * while the phone is known to be still (zero-rate update). H = [0, 1].
+   */
+  updateBias(z, r) {
+    if (!this.initialized || !Number.isFinite(z)) return false;
+    const [[p00, p01], [p10, p11]] = this.P;
+    const S = p11 + r;
+    const k0 = p01 / S;
+    const k1 = p11 / S;
+    const y = z - this.bias;
+    this.psi = wrap360(this.psi + k0 * y);
+    this.bias = Math.max(-this.maxBias, Math.min(this.maxBias, this.bias + k1 * y));
+    this.P = [
+      [p00 - k0 * p10, p01 - k0 * p11],
+      [p10 - k1 * p10, p11 - k1 * p11],
+    ];
+    return true;
+  }
+
   /** Heading extrapolated to time t without mutating the filter. */
   peek(t) {
     if (!this.initialized || this.t === null) return null;
