@@ -12,11 +12,13 @@ export class HeadingKF {
   constructor({
     qHeadingGyro = 0.05, // deg^2/s  - heading random walk when integrating the gyro
     qHeadingNoGyro = 40, // deg^2/s  - heading random walk with no gyro available
-    qBias = 0.0004, //      (deg/s)^2/s - gyro bias random walk
+    qBias = 0.0001, //      (deg/s)^2/s - gyro bias random walk
+    maxBias = 1.5, //       deg/s - phone gyros drift well under this; a larger "bias" is a
+    //                      distorted compass being explained away, so we cap it
     gate = 16, //           chi^2 gate (4 sigma) for compass innovations
     maxRejects = 15, //     consecutive rejects before we accept the compass again
   } = {}) {
-    Object.assign(this, { qHeadingGyro, qHeadingNoGyro, qBias, gate, maxRejects });
+    Object.assign(this, { qHeadingGyro, qHeadingNoGyro, qBias, maxBias, gate, maxRejects });
     this.reset();
   }
 
@@ -100,7 +102,7 @@ export class HeadingKF {
     const k0 = p00 / S;
     const k1 = p10 / S;
     this.psi = wrap360(this.psi + k0 * y);
-    this.bias += k1 * y;
+    this.bias = Math.max(-this.maxBias, Math.min(this.maxBias, this.bias + k1 * y));
     this.P = [
       [(1 - k0) * p00, (1 - k0) * p01],
       [p10 - k1 * p00, p11 - k1 * p01],
@@ -121,7 +123,7 @@ export class HeadingKF {
 }
 
 export class PositionKF {
-  constructor({ q = 0.4 /* m^2/s^3 white-acceleration density */, gate = 25, maxRejects = 4 } = {}) {
+  constructor({ q = 2.0 /* m^2/s^3 white-acceleration density */, gate = 25, maxRejects = 4 } = {}) {
     Object.assign(this, { q, gate, maxRejects });
     this.reset();
   }

@@ -89,3 +89,15 @@ test('position KF accepts a persistent jump after a few rejects', () => {
   for (let k = 1; k <= 6; k++) kf.updatePosition(k * 1000, 500, 500, 4);
   assert.ok(Math.hypot(kf.x[0] - 500, kf.x[1] - 500) < 5);
 });
+
+test('heading KF caps the gyro bias estimate', () => {
+  const kf = new HeadingKF();
+  kf.propagate(0, 0);
+  kf.update(0, 4);
+  // Compass keeps disagreeing with a stationary gyro (e.g. distorted by a magnet).
+  for (let i = 1; i < 600; i++) {
+    kf.propagate(i * 100, 0);
+    kf.update((i * 0.5) % 360, 36);
+  }
+  assert.ok(Math.abs(kf.bias) <= kf.maxBias + 1e-9, `bias ${kf.bias}`);
+});

@@ -52,10 +52,13 @@ export class Fusion extends EventTarget {
     this.gnss = fix;
     const { x, y } = this.frame.toXY(fix.lat, fix.lon);
     const acc = Math.max(fix.acc || 10, 1);
-    this.pkf.updatePosition(fix.t, x, y, acc * acc);
+    // Reported accuracy is a ~68% horizontal radius; per-axis 1-sigma is about 0.7 of it.
+    this.pkf.updatePosition(fix.t, x, y, (0.7 * acc) ** 2);
 
     if (fix.speed !== null) {
-      const velVar = Math.max(0.15, 0.03 * acc) ** 2;
+      // Phone GNSS velocity is smoothed by the chipset; trusting it too much makes the
+      // track integrate velocity and drift metres away from the fixes (seen in field logs).
+      const velVar = Math.max(0.5, 0.1 * acc) ** 2;
       if (fix.speed < 0.3) {
         this.pkf.updateVelocity(fix.t, 0, 0, Math.max(velVar, 0.3 ** 2));
       } else if (fix.cog !== null) {
