@@ -796,7 +796,9 @@ textarea.field {
   text-align: right;
   color: var(--text-2);
   text-decoration: none;
-  opacity: 0.85;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--glass-strong);
 }
 .sky-readout {
   position: absolute;

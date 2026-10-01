@@ -181,6 +181,7 @@ export class Visualizer {
     const R = Math.min(w, h) / 2; // usable radius in px
 
     if (!vessel) {
+      this.onMap = false;
       this._drawRings(w / 2, h / 2, R, 0);
       ctx.fillStyle = c.text3;
       ctx.font = '600 13px "Plus Jakarta Sans", system-ui, sans-serif';
@@ -219,7 +220,8 @@ export class Visualizer {
       return [cx + rx / mpp, cy - ry / mpp];
     };
 
-    if (this.mapBase && frame.geo) this._drawMap(frame, center, rot);
+    this.onMap = !!(this.mapBase && frame.geo);
+    if (this.onMap) this._drawMap(frame, center, rot);
     this._drawRings(cx, cy, R, rot);
 
     // Breadcrumbs: oldest fade out, newest brightest.
@@ -308,7 +310,7 @@ export class Visualizer {
         ctx.font = '700 13px "Plus Jakarta Sans", system-ui, sans-serif';
         const tw = ctx.measureText(label).width;
         ctx.fillStyle = c.canvas;
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = this.onMap ? 0.92 : 0.85;
         roundRect(ctx, mx - tw / 2 - 8, my - 12, tw + 16, 24, 12);
         ctx.fill();
         ctx.globalAlpha = 1;
@@ -346,35 +348,97 @@ export class Visualizer {
     this._drawScale();
   }
 
+  /** Overlay inks: over a map, lines and text get a contrasting halo so they read on any imagery. */
+  _ink() {
+    const dark = this.mapDark;
+    return {
+      line: dark ? 'rgba(238, 246, 244, 0.85)' : 'rgba(7, 34, 38, 0.8)',
+      halo: dark ? 'rgba(2, 10, 12, 0.7)' : 'rgba(255, 255, 255, 0.85)',
+      pill: dark ? 'rgba(4, 17, 19, 0.78)' : 'rgba(255, 255, 255, 0.88)',
+      text: this.c.text,
+    };
+  }
+
+  /** Stroke the current path twice: a wide halo, then the line. */
+  _haloStroke(width, line, halo) {
+    const { ctx } = this;
+    ctx.lineWidth = width + 2.5;
+    ctx.strokeStyle = halo;
+    ctx.stroke();
+    ctx.lineWidth = width;
+    ctx.strokeStyle = line;
+    ctx.stroke();
+  }
+
+  _haloText(text, x, y, fill, halo) {
+    const { ctx } = this;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = halo;
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+  }
+
   _drawRings(cx, cy, R, rot) {
     const { ctx, c, mpp } = this;
     const step = niceStep((R * mpp) / 3);
     const stepPx = step / mpp;
-    ctx.strokeStyle = c.grid;
-    ctx.lineWidth = 1;
-    ctx.font = '600 10px "Plus Jakarta Sans", system-ui, sans-serif';
-    ctx.fillStyle = c.text3;
-    ctx.textAlign = 'left';
     const maxR = Math.hypot(this.w, this.h) / 2;
-    for (let i = 1; i * stepPx < maxR; i++) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, i * stepPx, 0, Math.PI * 2);
-      ctx.stroke();
-      // Label each ring where it crosses the left horizontal axis (clear of the HUD).
-      if (i <= 4 && i * stepPx < cx - 8) ctx.fillText(fmtDist(i * step), cx - i * stepPx + 4, cy - 5);
-    }
-    // Cross hairs aligned with north.
+    const ink = this.onMap ? this._ink() : null;
     const th = (rot * Math.PI) / 180;
+
+    // Cross hairs aligned with north (under the rings).
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(-th);
     ctx.beginPath();
     ctx.moveTo(-maxR, 0); ctx.lineTo(maxR, 0);
     ctx.moveTo(0, -maxR); ctx.lineTo(0, maxR);
-    ctx.globalAlpha = 0.6;
-    ctx.stroke();
+    if (ink) {
+      ctx.globalAlpha = 0.55;
+      this._haloStroke(1, ink.line, ink.halo);
+    } else {
+      ctx.strokeStyle = c.grid;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.6;
+      ctx.stroke();
+    }
     ctx.restore();
     ctx.globalAlpha = 1;
+
+    for (let i = 1; i * stepPx < maxR; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, i * stepPx, 0, Math.PI * 2);
+      if (ink) this._haloStroke(1.4, ink.line, ink.halo);
+      else {
+        ctx.strokeStyle = c.grid;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+
+    // Ring labels where each ring crosses the left horizontal axis (clear of the HUD).
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    for (let i = 1; i <= 4 && i * stepPx < cx - 8 && i * stepPx < maxR; i++) {
+      const label = fmtDist(i * step);
+      const x = cx - i * stepPx + 4, y = cy - 10;
+      if (ink) {
+        ctx.font = '700 11px "Plus Jakarta Sans", system-ui, sans-serif';
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = ink.pill;
+        roundRect(ctx, x - 4, y - 8, tw + 8, 16, 8);
+        ctx.fill();
+        ctx.fillStyle = ink.text;
+        ctx.fillText(label, x, y + 0.5);
+      } else {
+        ctx.font = '600 10px "Plus Jakarta Sans", system-ui, sans-serif';
+        ctx.fillStyle = c.text3;
+        ctx.fillText(label, x, y + 5);
+      }
+    }
+    ctx.textBaseline = 'alphabetic';
   }
 
   _drawVessel(x, y, hdgScreen) {
@@ -428,12 +492,24 @@ export class Visualizer {
     ctx.moveTo(0, 12); ctx.lineTo(5, 2); ctx.lineTo(-5, 2);
     ctx.closePath();
     ctx.fill();
+    if (this.onMap) {
+      ctx.beginPath();
+      ctx.moveTo(0, -12); ctx.lineTo(5, 2); ctx.lineTo(0, 12); ctx.lineTo(-5, 2);
+      ctx.closePath();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = this._ink().halo;
+      ctx.stroke();
+    }
     ctx.restore();
-    ctx.fillStyle = c.text2;
-    ctx.font = '700 10px "Plus Jakarta Sans", system-ui, sans-serif';
+    ctx.font = '700 11px "Plus Jakarta Sans", system-ui, sans-serif';
     ctx.textAlign = 'center';
     const th = (-rot * Math.PI) / 180;
-    ctx.fillText('N', x + Math.sin(th) * 20, y - Math.cos(th) * 20 + 4);
+    const nx = x + Math.sin(th) * 20, ny = y - Math.cos(th) * 20 + 4;
+    if (this.onMap) this._haloText('N', nx, ny, this._ink().text, this._ink().halo);
+    else {
+      ctx.fillStyle = c.text2;
+      ctx.fillText('N', nx, ny);
+    }
   }
 
   _drawScale() {
@@ -441,15 +517,23 @@ export class Visualizer {
     const m = niceStep(this.w * 0.22 * mpp);
     const px = m / mpp;
     const x = 16, y = 66; // top-left, under the mode tag (bottom is the skyhook readout)
-    ctx.strokeStyle = c.text2;
-    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + px, y); ctx.lineTo(x + px, y - 5);
-    ctx.stroke();
-    ctx.fillStyle = c.text2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.font = '700 11px "Plus Jakarta Sans", system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(fmtDist(m), x, y - 9);
+    if (this.onMap) {
+      const ink = this._ink();
+      this._haloStroke(2, ink.text, ink.halo);
+      this._haloText(fmtDist(m), x, y - 9, ink.text, ink.halo);
+    } else {
+      ctx.strokeStyle = c.text2;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = c.text2;
+      ctx.fillText(fmtDist(m), x, y - 9);
+    }
   }
 }
 

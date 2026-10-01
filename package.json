@@ -1,6 +1,6 @@
 {
   "name": "gnsslog",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "description": "PWA vessel position/heading logger with skyhook view",
   "type": "module",
