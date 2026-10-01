@@ -59,6 +59,13 @@ try {
 
   await page.waitForFunction(() => document.querySelector('#r-pos').textContent.includes('°N'), null, { timeout: 10000 });
   assert.equal(await page.isDisabled('#viz-mode'), true, 'no mark yet: centring is fixed on the vessel');
+  assert.match(await page.textContent('#title-version'), /^v\d+\.\d+\.\d+$/, 'version shown next to the title');
+  // Tapping the north marker toggles north-up / heading-up (and back).
+  await page.click('#btn-north');
+  assert.equal(await page.evaluate(() => window.gnsslog.settings.get('orientUp')), 'heading');
+  assert.equal(await page.textContent('#btn-orient'), 'H↑');
+  await page.click('#btn-north');
+  assert.equal(await page.evaluate(() => window.gnsslog.settings.get('orientUp')), 'north');
   await sleep(1500);
   await page.screenshot({ path: join(out, '1-live.png') });
 
@@ -84,6 +91,9 @@ try {
   // Clear trail is display-only: recording continues and no samples are lost.
   const seqBefore = await page.evaluate(() => window.gnsslog.recorder.seq);
   await page.click('#btn-trail-clear');
+  await page.waitForSelector('#sheet:not([hidden]) [data-act="ok"]');
+  await page.screenshot({ path: join(out, '2d-clear-confirm.png') });
+  await page.click('[data-act="ok"]');
   await sleep(1000);
   const seqAfter = await page.evaluate(() => window.gnsslog.recorder.seq);
   assert.ok(seqAfter >= seqBefore + 4, `still recording after clearing the trail (${seqBefore} -> ${seqAfter})`);

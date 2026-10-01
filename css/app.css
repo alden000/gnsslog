@@ -713,6 +713,29 @@ textarea.field {
   font-weight: 800;
   letter-spacing: -0.03em;
 }
+.title-ver {
+  margin-left: 6px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  vertical-align: 2px;
+}
+/* Invisible tap target over the north marker drawn on the canvas (bottom-right). */
+.north-btn {
+  position: absolute;
+  right: 4px;
+  bottom: 28px;
+  width: 44px;
+  height: 50px;
+  border-radius: 14px;
+  background: transparent;
+  -webkit-tap-highlight-color: transparent;
+}
+.north-btn:active {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
 .logo {
   width: 38px;
   height: 38px;

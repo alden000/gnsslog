@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.7.2';
+const VERSION = '0.7.3';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -239,11 +239,36 @@ function renderCenterButton(btn, hasMark, centerOn) {
   btn.classList.toggle('sky', onMark);
   btn.title = hasMark ? `Tap to centre on the ${onMark ? 'vessel' : 'marked location'}` : '';
 }
+/** Small yes/no bottom sheet. */
+function confirmSheet({ title, text, confirm, onConfirm }) {
+  openSheet(
+    `<h3>${esc(title)}</h3>
+     <p class="sub">${esc(text)}</p>
+     <div class="stack"><div class="btn-pair">
+       <button class="btn-glass pressable" data-act="cancel">Cancel</button>
+       <button class="btn-aurora pressable" data-act="ok">${esc(confirm)}</button>
+     </div></div>`,
+    (sheet, close) => {
+      $('[data-act="cancel"]', sheet).onclick = () => close();
+      $('[data-act="ok"]', sheet).onclick = () => {
+        close();
+        onConfirm();
+      };
+    },
+  );
+}
+
 // Clear trail: display only. The recorder and stored samples are not touched.
-$('#btn-trail-clear').onclick = () => {
-  trail.length = 0;
-  toast('Trail cleared on the plot · recorded data is kept', { ms: 2200 });
-};
+$('#btn-trail-clear').onclick = () =>
+  confirmSheet({
+    title: 'Clear trail?',
+    text: 'Removes the breadcrumb trail from the plot. Recorded data is not affected.',
+    confirm: 'Clear trail',
+    onConfirm: () => {
+      trail.length = 0;
+      toast('Trail cleared on the plot · recorded data is kept', { ms: 2200 });
+    },
+  });
 
 $('#viz-mode').onclick = () => {
   liveCenter = liveCenter === 'vessel' ? 'mark' : 'vessel';
@@ -919,10 +944,16 @@ function renderPlayPause() {
   $('#pb-play').setAttribute('aria-label', pb.playing ? 'Pause' : 'Play');
 }
 $('#pb-back').onclick = closePlayback;
-$('#pb-trail-clear').onclick = () => {
-  pb.trailFrom = sampleIndexAt(pb.t);
-  toast('Trail cleared on the plot · session data is kept', { ms: 2200 });
-};
+$('#pb-trail-clear').onclick = () =>
+  confirmSheet({
+    title: 'Clear trail?',
+    text: 'Hides the trail drawn so far; it builds up again from here. The session data is not affected.',
+    confirm: 'Clear trail',
+    onConfirm: () => {
+      pb.trailFrom = sampleIndexAt(pb.t);
+      toast('Trail cleared on the plot · session data is kept', { ms: 2200 });
+    },
+  });
 $('#pb-mode').onclick = () => {
   pb.centerOn = pb.centerOn === 'vessel' ? 'mark' : 'vessel';
   renderCenterButton($('#pb-mode'), true, pb.centerOn);
@@ -942,6 +973,8 @@ $('#pb-scrub').oninput = (e) => {
 };
 $('#pb-auto').onclick = () => pb.viz.setAuto(!pb.viz.auto);
 $('#pb-orient').onclick = $('#btn-orient').onclick;
+// Tapping the north marker on either plot toggles north-up / heading-up too.
+for (const id of ['#btn-north', '#pb-north']) $(id).onclick = $('#btn-orient').onclick;
 for (const b of $$('#pb-speed button')) {
   b.onclick = () => {
     pb.speed = Number(b.dataset.v);
@@ -1085,6 +1118,7 @@ $('#btn-dev-reset').onclick = () => {
 };
 
 $('#app-version').textContent = `GNSS Log ${VERSION} · logging at 5 Hz`;
+$('#title-version').textContent = `v${VERSION}`;
 
 // ---------------------------------------------------------------- service worker
 
