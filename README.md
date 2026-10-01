@@ -66,9 +66,14 @@ Then on the phone:
 
 ### Field notes
 
-- Keep the app in the foreground while recording. A screen wake lock is held during a recording;
-  mobile browsers suspend web pages (and their GPS/sensor feeds) when the screen is locked or the
-  app is backgrounded.
+- **Keep the app on screen while recording.** A screen wake lock is held during a recording, but
+  phones freeze web apps that are not visible (GPS and sensor feeds stop) and Android later
+  discards them, even with Samsung's "keep open". To use other apps at the same time, put GNSS
+  Log in **split screen** or **pop-up view** so it stays visible.
+- When the app goes to the background the recording **pauses** (no rows are written, a `pause`
+  event is logged) and **resumes** when it comes back (`resume` event with `gapMs`). If the phone
+  closed the app, reopening it offers **Continue recording** in the same test case. Each
+  continuation increments the `segment` column, so gaps are easy to split on.
 - Phones deliver GNSS at about 1 Hz; the 5 Hz rows are Kalman-predicted between fixes.
   `gnssNew = 1` marks the rows where a new fix arrived, and the raw fix is in the `gnss*` columns.
 - Keep the phone away from steel, speakers and motors; check the diagnostics line at the bottom
@@ -94,6 +99,8 @@ Each request carries the full session metadata plus one chunk of samples (up to 
       { "type": "skyhook", "t": 1790838012000, "seq": 60, "lat": 1.2640123, "lon": 103.8400456,
         "x": 1.32, "y": 1.37, "acc": 3.1, "markedAt": 1790838012000 },
       { "type": "skyhook_clear", "t": 1790838200000, "seq": 1000 },
+      { "type": "pause", "t": 1790838300000, "seq": 1500, "reason": "background" },
+      { "type": "resume", "t": 1790838330000, "seq": 1500, "reason": "foreground", "gapMs": 30000, "segment": 1 },
       { "type": "stop", "t": 1790838360000, "seq": 1800 }
     ],
     "metaVersion": 4, "device": { "ua": "…", "name": "Tender 2" }, "config": { "mount": "flat", … },
@@ -121,6 +128,7 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | Column | Meaning |
 |---|---|
 | `seq`, `t`, `iso` | Row index, epoch ms, ISO time |
+| `segment` | 0 at start; +1 after each pause/resume or app reopen (rows within a segment are continuous 5 Hz) |
 | `lat`, `lon` | Fused position (WGS84) |
 | `x`, `y` | Fused position in metres East/North of `session.origin` |
 | `vx`, `vy` | Fused velocity East/North (m/s) |

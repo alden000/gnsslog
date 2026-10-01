@@ -175,7 +175,7 @@ export class Visualizer {
         let ext = Math.max((vessel.acc || 5) * 1.5, 15);
         const tr = frame.trail;
         const tail = tr.length > 300 ? tr.length - 300 : 0; // last minute
-        for (let i = tail; i < tr.length; i++) ext = Math.max(ext, Math.hypot(tr[i].x - vessel.x, tr[i].y - vessel.y));
+        for (let i = tail; i < tr.length; i++) if (tr[i]) ext = Math.max(ext, Math.hypot(tr[i].x - vessel.x, tr[i].y - vessel.y));
         need = ext * 1.1;
       }
       const target = need / (R * 0.82);
@@ -210,11 +210,16 @@ export class Visualizer {
         ctx.globalAlpha = 0.15 + 0.85 * ((s + 1) / segs) ** 1.6;
         ctx.lineWidth = 1.5 + 1.5 * ((s + 1) / segs);
         ctx.beginPath();
-        let [px, py] = toScreen(tr[a].x, tr[a].y);
-        ctx.moveTo(px, py);
-        for (let i = a + 1; i <= b; i++) {
-          [px, py] = toScreen(tr[i].x, tr[i].y);
-          ctx.lineTo(px, py);
+        let pen = false; // null entries mark gaps (app was in the background)
+        for (let i = a; i <= b; i++) {
+          if (!tr[i]) {
+            pen = false;
+            continue;
+          }
+          const [px, py] = toScreen(tr[i].x, tr[i].y);
+          if (pen) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+          pen = true;
         }
         ctx.stroke();
       }

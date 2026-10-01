@@ -158,6 +158,19 @@ export class Fusion extends EventTarget {
     this.hkf.propagate(t, gyroFresh ? this.gyroRate : null);
   }
 
+  /**
+   * Re-anchor the local x/y frame (used when resuming a session after the app was reopened,
+   * so x/y keep the session's original origin). Resets the position filter.
+   */
+  setOrigin(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (this.frame && this.frame.lat0 === lat && this.frame.lon0 === lon) return;
+    this.frame = new LocalFrame(lat, lon);
+    this.pkf.reset();
+    if (this.skyhook) Object.assign(this.skyhook, this.frame.toXY(this.skyhook.lat, this.skyhook.lon));
+    this._emit('frame', { lat, lon });
+  }
+
   // ---------------------------------------------------------------- skyhook
 
   markSkyhook(t = Date.now()) {

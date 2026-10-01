@@ -7,7 +7,7 @@ const FLUSH_EVERY = SAMPLE_HZ; // ~1 s of samples per write
 
 /** Columns of a sample row, in CSV order. */
 export const SAMPLE_COLUMNS = [
-  'seq', 't', 'iso',
+  'seq', 't', 'iso', 'segment',
   'lat', 'lon', 'x', 'y', 'vx', 'vy', 'sog', 'cog',
   'hdg', 'hdgMag', 'hdgRate', 'hdgSigma', 'hdgSrc', 'gyroRate', 'gyroBias', 'compass', 'compassDev', 'pitch', 'roll',
   'posSigma', 'gnssAcc', 'gnssAge', 'gnssNew', 'gnssT', 'gnssLat', 'gnssLon', 'gnssAlt', 'gnssSpeed', 'gnssCog',
@@ -83,24 +83,86 @@ export class Recorder extends EventTarget {
     this.seq = 0;
     this.lastGnssT = null;
     this.wakeLock = null;
+    this.segment = 0; // increments after every gap (background or app reload)
+    this.paused = false;
+    this.pausedAt = null;
     this._writing = Promise.resolve();
+    // Phones freeze web apps that are not on screen: GNSS and motion updates stop. Rather
+    // than logging stale, coasting rows, pause sampling and mark the gap.
     document.addEventListener('visibilitychange', () => {
       if (!this.session) return;
-      if (document.visibilityState === 'hidden') this.flush();
-      else this._acquireWakeLock();
+      if (document.visibilityState === 'hidden') this.pause('background');
+      else this.resumeFromBackground();
     });
     window.addEventListener('pagehide', () => this.flush());
+  }
+
+  pause(reason) {
+    if (!this.session || this.paused) return;
+    this.paused = true;
+    this.pausedAt = Date.now();
+    this.session.events.push({ type: 'pause', t: this.pausedAt, seq: this.seq, reason });
+    this.session.metaVersion++;
+    this.flush();
+  }
+
+  resumeFromBackground() {
+    if (!this.session || !this.paused) return;
+    const gapMs = Date.now() - this.pausedAt;
+    this._resumed('foreground', gapMs);
+    this._acquireWakeLock();
+    this._emit('resumed', { gapMs, reason: 'foreground' });
+  }
+
+  _resumed(reason, gapMs) {
+    this.paused = false;
+    this.pausedAt = null;
+    this.segment++;
+    this.session.segment = this.segment;
+    this.session.events.push({ type: 'resume', t: Date.now(), seq: this.seq, reason, gapMs, segment: this.segment });
+    this.session.metaVersion++;
+    this.flush();
+  }
+
+  /** The most recent session still marked 'recording' (left behind by a closed or killed app). */
+  async findInterrupted() {
+    const sessions = await this.db.listSessions();
+    const open = sessions.filter((s) => s.status === 'recording');
+    if (!open.length) return null;
+    const s = open[0];
+    const last = s.sampleCount > 0 ? (await this.db.getSamples(s.id, s.sampleCount - 1))[0] : null;
+    return { session: s, lastT: last ? last.t : s.startedAt };
+  }
+
+  /** Continue an interrupted session after the app was reopened. */
+  async resumeSession(session, lastT, skyhook = null) {
+    if (this.session) return;
+    this.session = session;
+    this.seq = session.sampleCount;
+    this.buffer = [];
+    this.lastGnssT = null;
+    this.segment = session.segment || 0;
+    this.pendingSky = [];
+    this.paused = true;
+    if (skyhook) {
+      session.events.push(skyhookEvent('skyhook_active', skyhook, this.seq));
+      this.pendingSky.push('active');
+    }
+    this._resumed('reopened', Date.now() - lastT);
+    await this.db.putSession(this.session);
+    this._acquireWakeLock();
+    this._emit('change');
   }
 
   get active() {
     return !!this.session;
   }
 
-  /** Close sessions left 'recording' by a crash, reload or killed tab. */
-  async recoverInterrupted() {
+  /** Close sessions left 'recording' by a crash, reload or killed tab (optionally all but one). */
+  async recoverInterrupted(exceptId = null) {
     const sessions = await this.db.listSessions();
     for (const s of sessions) {
-      if (s.status !== 'recording') continue;
+      if (s.status !== 'recording' || s.id === exceptId || s.id === this.session?.id) continue;
       const last = s.sampleCount > 0 ? (await this.db.getSamples(s.id, s.sampleCount - 1))[0] : null;
       s.status = 'done';
       s.endedAt = last ? last.t : s.startedAt;
@@ -118,6 +180,8 @@ export class Recorder extends EventTarget {
     this.buffer = [];
     this.lastGnssT = null;
     this.pendingSky = skyhook ? ['active'] : [];
+    this.segment = 0;
+    this.paused = false;
     this.session = {
       id: uuid(),
       name: name || defaultName(new Date(now)),
@@ -131,6 +195,7 @@ export class Recorder extends EventTarget {
       origin,
       events: [{ type: 'start', t: now, seq: 0 }],
       metaVersion: 1,
+      segment: 0,
       device: { ua: navigator.userAgent, name: this.settings.get('deviceName') || null },
       config: this.settings.snapshot(),
       app: { version: window.GNSSLOG_VERSION || 'dev' },
@@ -144,9 +209,10 @@ export class Recorder extends EventTarget {
 
   /** Called by the 5 Hz ticker with the fused state. */
   add(state) {
-    if (!this.session) return;
+    if (!this.session || this.paused) return;
     if (!this.session.origin && state.origin) this.session.origin = state.origin;
     const row = sampleFromState(state, this.session.id, this.seq++, this.lastGnssT);
+    row.segment = this.segment;
     if (this.pendingSky?.length) {
       row.skyEvent = this.pendingSky.join(';');
       this.pendingSky = [];
@@ -205,6 +271,7 @@ export class Recorder extends EventTarget {
     await this.flush();
     const finished = this.session;
     this.session = null;
+    this.paused = false;
     this._releaseWakeLock();
     this._emit('change');
     this._emit('stopped', finished);

@@ -11,7 +11,7 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 
-const VERSION = '0.3.2';
+const VERSION = '0.4.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -142,14 +142,22 @@ const sensors = new Sensors();
 const fusion = new Fusion(settings);
 const recorder = new Recorder(db, settings);
 const sync = new SyncManager(db, settings);
-await recorder.recoverInterrupted();
+// A recording cut off by the phone closing the app can be resumed (asked at start-up below);
+// anything older, or any extra open session, is closed now.
+const RESUME_WINDOW = 12 * 3600 * 1000;
+let interrupted = await recorder.findInterrupted();
+if (interrupted && Date.now() - interrupted.lastT > RESUME_WINDOW) interrupted = null;
+await recorder.recoverInterrupted(interrupted?.session.id);
 
 sensors.addEventListener('gnss', (e) => fusion.onGnss(e.detail));
 sensors.addEventListener('orientation', (e) => fusion.onOrientation(e.detail));
 sensors.addEventListener('motion', (e) => fusion.onMotion(e.detail));
 
 let origin = null;
-fusion.addEventListener('frame', (e) => (origin = e.detail));
+fusion.addEventListener('frame', (e) => {
+  origin = e.detail;
+  trail.length = 0; // coordinates of the old frame no longer apply
+});
 
 // ---------------------------------------------------------------- 5 Hz ticker
 
@@ -272,6 +280,10 @@ recorder.addEventListener('change', () => {
   if (currentTab === 'sessions') renderSessions();
 });
 recorder.addEventListener('stopped', () => sync.kick(true));
+recorder.addEventListener('resumed', (e) => {
+  trail.push(null); // break the breadcrumb line across the gap
+  toast(`Recording was paused for ${fmtDuration(e.detail.gapMs)} while the app was in the background`, { kind: 'warn', ms: 6000 });
+});
 recorder.addEventListener('error', (e) => toast(`Storage error: ${e.detail?.message || e.detail}`, { kind: 'err' }));
 
 function renderSkyButtons() {
@@ -335,6 +347,7 @@ $('#btn-rec').onclick = () => {
          <input class="field" id="new-name" type="text" maxlength="120" value="${esc(defaultName())}" /></label>
        <label class="col"><span class="section-label">Notes</span>
          <textarea class="field" id="new-notes" maxlength="2000" placeholder="Conditions, sea state, setup…"></textarea></label>
+       <p class="hint">Keep GNSS Log on screen while recording: phones pause web apps in the background. To use other apps, open it in split screen or pop-up view.</p>
        ${!fusion.gnss ? '<p class="hint">No GNSS fix yet — recording will start now and fill in once a fix arrives.</p>' : ''}
        <button class="btn-aurora pressable" id="new-start"><span>Start recording</span></button>
      </div>`,
@@ -400,8 +413,45 @@ sensors.addEventListener('status', renderPerm);
   if (geoGranted) sensors.startGnss();
   if (!sensors.needsMotionPermission) sensors.startMotion();
   renderPerm();
-  if (sensors.needsMotionPermission || !geoGranted) showOnboarding();
+  if (interrupted) showResume(interrupted);
+  else if (sensors.needsMotionPermission || !geoGranted) showOnboarding();
 })();
+
+function showResume({ session, lastT }) {
+  const ago = fmtDuration(Date.now() - lastT);
+  let decided = false;
+  openSheet(
+    `<h3>Continue recording?</h3>
+     <p class="sub">“${esc(session.name)}” stopped ${ago} ago when the phone closed the app
+       (${session.sampleCount} samples saved).</p>
+     <div class="stack">
+       <p class="hint">Continuing keeps the same test case. The gap is logged as a pause/resume event and the
+         <b>segment</b> column goes up by one.</p>
+       <button class="btn-aurora pressable" data-act="resume"><span>Continue recording</span></button>
+       <button class="btn-glass pressable" data-act="finish">Finish it</button>
+     </div>`,
+    (sheet, close) => {
+      $('[data-act="resume"]', sheet).onclick = async () => {
+        decided = true;
+        close();
+        if (session.origin) fusion.setOrigin(session.origin.lat, session.origin.lon);
+        const sky = fusion.skyhook && Number.isFinite(fusion.skyhook.x) ? fusion.skyhook : null;
+        await recorder.resumeSession(session, lastT, sky);
+        if (!sensors.running || !sensors.motionStarted) await enableSensors(); // this tap grants motion access
+        toast('Recording continued', { kind: 'ok' });
+      };
+      $('[data-act="finish"]', sheet).onclick = async () => {
+        decided = true;
+        close();
+        await recorder.recoverInterrupted();
+        renderSessions();
+        if (sensors.needsMotionPermission || sensors.status.gnss === 'off') showOnboarding();
+      };
+      // Dismissing without choosing finishes it, so a session is never left open.
+      $('#sheet-scrim').addEventListener('click', () => !decided && recorder.recoverInterrupted(), { once: true });
+    },
+  );
+}
 
 function showOnboarding() {
   const row = (icon, title, text) => `
@@ -740,7 +790,7 @@ function playbackFrame() {
   const a = pb.samples[i];
   const b = pb.samples[Math.min(i + 1, pb.samples.length - 1)];
   const pa = pb.pts[i], pbb = pb.pts[Math.min(i + 1, pb.pts.length - 1)];
-  const f = b.t > a.t ? Math.min(1, Math.max(0, (pb.t - a.t) / (b.t - a.t))) : 0;
+  const f = b.t > a.t && b.t - a.t <= 2000 ? Math.min(1, Math.max(0, (pb.t - a.t) / (b.t - a.t))) : 0;
   const lerp = (u, v) => (isNum(u) && isNum(v) ? u + (v - u) * f : isNum(u) ? u : null);
 
   let vessel = null;
@@ -761,7 +811,11 @@ function playbackFrame() {
   // Trail: last N minutes up to the playhead.
   const cap = trailCap();
   const tr = [];
-  for (let k = Math.max(0, i - cap); k <= i; k++) if (pb.pts[k]) tr.push(pb.pts[k]);
+  for (let k = Math.max(0, i - cap); k <= i; k++) {
+    if (!pb.pts[k]) continue;
+    if (k > 0 && pb.samples[k].t - pb.samples[k - 1].t > 2000) tr.push(null); // gap: break the line
+    tr.push(pb.pts[k]);
+  }
   if (vessel) tr.push({ x: vessel.x, y: vessel.y });
 
   // Readouts (throttled to ~15 fps by cheap comparisons; DOM writes are small).
