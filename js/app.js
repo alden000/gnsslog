@@ -11,7 +11,7 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -462,7 +462,7 @@ async function renderSessions() {
       else badge = '<span class="badge">On device</span>';
       const skyCount = s.events.filter((e) => e.type === 'skyhook').length;
       return `<button class="session glass pressable${animate ? ' reveal' : ''}" style="--i:${Math.min(i + 2, 10)}" data-id="${s.id}">
-        <span class="icon-tile ${live ? 'rose' : ''}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17c3-1 4-6 9-6s6 5 9 6" /><circle cx="12" cy="7" r="2.5" /></svg></span>
+        <span class="icon-tile ${live ? 'danger' : ''}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17c3-1 4-6 9-6s6 5 9 6" /><circle cx="12" cy="7" r="2.5" /></svg></span>
         <span class="meta"><strong>${esc(s.name)}</strong>
           <span class="tnum">${fmtDate(s.startedAt)} · ${fmtDuration(dur)} · ${count} pts${skyCount ? ` · ${skyCount} skyhook` : ''}${s.interrupted ? ' · interrupted' : ''}</span></span>
         ${badge}
@@ -569,7 +569,7 @@ function renderSync(st) {
       setChip(chip, 'warn', 'Offline');
       $('#sync-title').textContent = 'Offline';
       detail.textContent = `${pending} samples waiting · will upload when online`;
-      icon.classList.add('amber');
+      icon.classList.add('warning');
       break;
     case 'syncing':
       setChip(chip, 'busy', 'Syncing');
@@ -580,7 +580,7 @@ function renderSync(st) {
       setChip(chip, 'err', 'Sync error');
       $('#sync-title').textContent = 'Upload failed — retrying';
       detail.textContent = st.error;
-      icon.classList.add('rose');
+      icon.classList.add('danger');
       break;
     case 'paused':
       setChip(chip, pending ? 'warn' : 'ok', pending ? 'Paused' : 'Synced');
@@ -591,7 +591,7 @@ function renderSync(st) {
       setChip(chip, pending ? 'warn' : 'ok', pending ? `${pending} pending` : 'Synced');
       $('#sync-title').textContent = pending ? 'Waiting to upload' : 'All uploaded';
       detail.textContent = `${pending} samples pending${last}`;
-      if (!pending) icon.classList.add('mint');
+      if (!pending) icon.classList.add('success');
   }
 }
 sync.addEventListener('status', (e) => renderSync(e.detail));
@@ -786,7 +786,7 @@ function applyTheme() {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
   const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-  $('meta[name="theme-color"]').content = dark ? '#09090F' : '#F7F5FF';
+  $('meta[name="theme-color"]').content = dark ? '#060A12' : '#F3F5F9';
   viz.refreshTheme();
   pb.viz?.refreshTheme();
 }

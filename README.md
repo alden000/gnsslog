@@ -5,8 +5,22 @@ It logs position, speed, x/y velocity and heading at **5 Hz** with timestamps, k
 case on the device, uploads it to your cloud endpoint whenever there is a connection, and shows a
 top-down plot with breadcrumbs and a **Skyhook** station-keeping view.
 
-UI follows the "Aurora Ink" design direction (dark/light/system themes, glass surfaces,
-gradient only on the primary actions).
+UI follows the "Aurora Ink" design rules (dark/light/system themes, glass surfaces, gradient
+only on the primary actions) remixed to an **"Admiralty" blue-black and gold** palette: navy
+canvas and glows, with complementary gold reserved for the things you act on (record, selected
+tab, switches, the vessel). The skyhook marker and breadcrumbs use blue so they read against the
+gold vessel.
+
+| Token | Dark | Light |
+|---|---|---|
+| Canvas | `#060A12` | `#F3F5F9` |
+| Surfaces | `#0B1220` / `#111A2B` / `#1A2539` | `#FFFFFF` / `#E9EEF6` / `#DBE3EF` |
+| Text | `#F2F0E9` / `#A8B2C6` / `#66738C` | `#0B1424` / `#4A5873` / `#8B96AA` |
+| Gold gradient | `#B8862B` → `#E3B453` → `#F6DC96` (navy ink `#0A1322` on top) | same |
+| Blue accents (trail, skyhook) | `#5AA2FF` / `#7CC4FF` | `#1F5FD1` |
+| Status | success `#3DDC97`, warning `#FF9F43`, error `#FF5C6C` | same |
+
+All colours are tokens at the top of `css/app.css`; the canvas plot reads them at runtime.
 
 ## Features (v0.1)
 

@@ -8,7 +8,7 @@ const dir = fileURLToPath(new URL('../icons/', import.meta.url));
 const jobs = [
   ['icon.svg', 'icon-512.png', 512, 'transparent'],
   ['icon.svg', 'icon-192.png', 192, 'transparent'],
-  ['icon.svg', 'apple-touch-icon.png', 180, '#09090F'],
+  ['icon.svg', 'apple-touch-icon.png', 180, '#060A12'],
   ['maskable.svg', 'maskable-512.png', 512, 'transparent'],
 ];
 const browser = await chromium.launch();

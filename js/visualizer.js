@@ -78,12 +78,11 @@ export class Visualizer {
       text3: v('--text-3'),
       hair: v('--hairline'),
       grid: v('--grid'),
-      violet: v('--violet'),
-      magenta: v('--magenta'),
-      coral: v('--coral'),
-      iris: v('--iris'),
-      mint: v('--mint'),
-      amber: v('--amber'),
+      brand1: v('--brand-1'),
+      brand2: v('--brand-2'),
+      brand3: v('--brand-3'),
+      onBrand: v('--on-brand'),
+      mark: v('--mark'),
       canvas: v('--canvas'),
       vessel: v('--vessel'),
       trail: v('--trail'),
@@ -230,11 +229,11 @@ export class Visualizer {
       if (rr > 4 && rr < 4 * R) {
         ctx.beginPath();
         ctx.arc(vx, vy, rr, 0, Math.PI * 2);
-        ctx.fillStyle = c.iris;
+        ctx.fillStyle = c.trail;
         ctx.globalAlpha = 0.08;
         ctx.fill();
         ctx.globalAlpha = 0.35;
-        ctx.strokeStyle = c.iris;
+        ctx.strokeStyle = c.trail;
         ctx.lineWidth = 1;
         ctx.stroke();
         ctx.globalAlpha = 1;
@@ -245,9 +244,8 @@ export class Visualizer {
     if (sky) {
       const [sx, sy] = toScreen(sky.x, sky.y);
       const grad = ctx.createLinearGradient(sx, sy, vx, vy);
-      grad.addColorStop(0, c.violet);
-      grad.addColorStop(0.5, c.magenta);
-      grad.addColorStop(1, c.coral);
+      grad.addColorStop(0, c.mark);
+      grad.addColorStop(1, c.brand2);
       ctx.strokeStyle = grad;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -256,7 +254,7 @@ export class Visualizer {
       ctx.stroke();
 
       // Marker: ring + crosshair.
-      ctx.strokeStyle = c.magenta;
+      ctx.strokeStyle = c.mark;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(sx, sy, 9, 0, Math.PI * 2);
@@ -267,7 +265,7 @@ export class Visualizer {
       ctx.moveTo(sx, sy - 15); ctx.lineTo(sx, sy - 5);
       ctx.moveTo(sx, sy + 5); ctx.lineTo(sx, sy + 15);
       ctx.stroke();
-      ctx.fillStyle = c.magenta;
+      ctx.fillStyle = c.mark;
       ctx.beginPath();
       ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
       ctx.fill();
@@ -356,9 +354,9 @@ export class Visualizer {
     }
     ctx.rotate((hdgScreen * Math.PI) / 180);
     const grad = ctx.createLinearGradient(0, -16, 0, 14);
-    grad.addColorStop(0, c.violet);
-    grad.addColorStop(0.55, c.magenta);
-    grad.addColorStop(1, c.coral);
+    grad.addColorStop(0, c.brand3);
+    grad.addColorStop(0.5, c.brand2);
+    grad.addColorStop(1, c.brand1);
     ctx.beginPath();
     ctx.moveTo(0, -17);
     ctx.bezierCurveTo(7, -9, 8, 2, 7, 13);
@@ -370,7 +368,7 @@ export class Visualizer {
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = c.vessel;
     ctx.stroke();
-    ctx.fillStyle = c.vessel;
+    ctx.fillStyle = c.onBrand;
     ctx.beginPath();
     ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
     ctx.fill();
@@ -383,7 +381,7 @@ export class Visualizer {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate((-rot * Math.PI) / 180);
-    ctx.fillStyle = c.coral;
+    ctx.fillStyle = c.brand2;
     ctx.beginPath();
     ctx.moveTo(0, -12); ctx.lineTo(5, 2); ctx.lineTo(-5, 2);
     ctx.closePath();

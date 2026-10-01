@@ -4,15 +4,17 @@
 
 /* ------------------------------------------------------------------ tokens */
 :root {
-  --violet: #7c5cff;
-  --magenta: #ff4fd8;
-  --coral: #ff8a5b;
-  --mint: #3ee6a8;
-  --rose: #ff5c7a;
-  --amber: #ffc857;
-  --iris: #9b87ff;
-  --sky: #5cc8ff;
-  --aurora: linear-gradient(110deg, var(--violet), var(--magenta) 55%, var(--coral));
+  /* Brand: "Admiralty" — blue-black canvas, gold for intent (blue/gold are complementary).
+     Gold is dark-to-light; the gradient is the only place it appears in bulk. */
+  --brand-1: #b8862b; /* deep gold */
+  --brand-2: #e3b453; /* gold */
+  --brand-3: #f6dc96; /* champagne */
+  --on-brand: #0a1322; /* navy ink on gold (white fails contrast) */
+  --success: #3ddc97;
+  --warning: #ff9f43;
+  --danger: #ff5c6c;
+  --info: #5aa2ff;
+  --aurora: linear-gradient(110deg, var(--brand-1), var(--brand-2) 55%, var(--brand-3));
 
   --ease-emph: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
@@ -36,74 +38,77 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
 
-  /* Dark "Ink" (default) */
+  /* Dark "Deep Navy" (default) */
   color-scheme: dark;
-  --canvas: #09090f;
-  --surface-1: #111119;
-  --surface-2: #181824;
-  --surface-3: #222232;
-  --glass: rgba(21, 21, 31, 0.72);
-  --glass-strong: rgba(27, 27, 40, 0.92);
+  --canvas: #060a12;
+  --surface-1: #0b1220;
+  --surface-2: #111a2b;
+  --surface-3: #1a2539;
+  --glass: rgba(12, 20, 34, 0.72);
+  --glass-strong: rgba(15, 24, 40, 0.92);
   --hairline: rgba(255, 255, 255, 0.08);
-  --edge-hi: rgba(255, 255, 255, 0.16);
-  --text: #f4f2ff;
-  --text-2: #a7a3c2;
-  --text-3: #6e6a88;
-  --glow-1: rgba(124, 92, 255, 0.42);
-  --glow-2: rgba(255, 79, 216, 0.42);
-  --glow-3: rgba(255, 138, 91, 0.42);
-  --primary: var(--iris);
-  --grid: rgba(167, 163, 194, 0.14);
-  --vessel: #f4f2ff;
-  --trail: #9b87ff;
+  --edge-hi: rgba(255, 236, 190, 0.18);
+  --text: #f2f0e9;
+  --text-2: #a8b2c6;
+  --text-3: #66738c;
+  --glow-1: rgba(31, 79, 191, 0.5);
+  --glow-2: rgba(18, 52, 128, 0.55);
+  --glow-3: rgba(200, 150, 46, 0.22);
+  --primary: #e3b453;
+  --grid: rgba(150, 170, 205, 0.13);
+  --vessel: #f2f0e9;
+  --trail: #5aa2ff;
+  --mark: #7cc4ff;
   --field: rgba(255, 255, 255, 0.05);
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     color-scheme: light;
-    --canvas: #f7f5ff;
+    --canvas: #f3f5f9;
     --surface-1: #ffffff;
-    --surface-2: #efebff;
-    --surface-3: #e4deff;
+    --surface-2: #e9eef6;
+    --surface-3: #dbe3ef;
     --glass: rgba(255, 255, 255, 0.78);
     --glass-strong: rgba(255, 255, 255, 0.95);
-    --hairline: rgba(20, 18, 31, 0.08);
+    --hairline: rgba(10, 19, 34, 0.09);
     --edge-hi: rgba(255, 255, 255, 0.9);
-    --text: #14121f;
-    --text-2: #5e5a76;
-    --text-3: #9793ae;
-    --glow-1: rgba(184, 168, 255, 0.55);
-    --glow-2: rgba(255, 179, 236, 0.55);
-    --glow-3: rgba(255, 199, 168, 0.55);
-    --primary: #5b3df5;
-    --grid: rgba(94, 90, 118, 0.16);
-    --vessel: #14121f;
-    --trail: #5b3df5;
-    --field: rgba(20, 18, 31, 0.04);
+    --text: #0b1424;
+    --text-2: #4a5873;
+    --text-3: #8b96aa;
+    --glow-1: rgba(170, 196, 245, 0.6);
+    --glow-2: rgba(150, 180, 238, 0.55);
+    --glow-3: rgba(243, 220, 160, 0.6);
+    --primary: #8a5e0b;
+    --grid: rgba(74, 88, 115, 0.15);
+    --vessel: #0b1424;
+    --trail: #1f5fd1;
+    --mark: #1f5fd1;
+    --field: rgba(10, 19, 34, 0.04);
   }
 }
 :root[data-theme='light'] {
   color-scheme: light;
-  --canvas: #f7f5ff;
+  --canvas: #f3f5f9;
   --surface-1: #ffffff;
-  --surface-2: #efebff;
-  --surface-3: #e4deff;
+  --surface-2: #e9eef6;
+  --surface-3: #dbe3ef;
   --glass: rgba(255, 255, 255, 0.78);
   --glass-strong: rgba(255, 255, 255, 0.95);
-  --hairline: rgba(20, 18, 31, 0.08);
+  --hairline: rgba(10, 19, 34, 0.09);
   --edge-hi: rgba(255, 255, 255, 0.9);
-  --text: #14121f;
-  --text-2: #5e5a76;
-  --text-3: #9793ae;
-  --glow-1: rgba(184, 168, 255, 0.55);
-  --glow-2: rgba(255, 179, 236, 0.55);
-  --glow-3: rgba(255, 199, 168, 0.55);
-  --primary: #5b3df5;
-  --grid: rgba(94, 90, 118, 0.16);
-  --vessel: #14121f;
-  --trail: #5b3df5;
-  --field: rgba(20, 18, 31, 0.04);
+  --text: #0b1424;
+  --text-2: #4a5873;
+  --text-3: #8b96aa;
+  --glow-1: rgba(170, 196, 245, 0.6);
+  --glow-2: rgba(150, 180, 238, 0.55);
+  --glow-3: rgba(243, 220, 160, 0.6);
+  --primary: #8a5e0b;
+  --grid: rgba(74, 88, 115, 0.15);
+  --vessel: #0b1424;
+  --trail: #1f5fd1;
+  --mark: #1f5fd1;
+  --field: rgba(10, 19, 34, 0.04);
 }
 
 /* ------------------------------------------------------------------ base */
@@ -276,14 +281,14 @@ h2 {
   background: color-mix(in srgb, currentColor 10%, transparent);
   flex: none;
 }
-.icon-tile.mint {
-  color: var(--mint);
+.icon-tile.success {
+  color: var(--success);
 }
-.icon-tile.amber {
-  color: var(--amber);
+.icon-tile.warning {
+  color: var(--warning);
 }
-.icon-tile.rose {
-  color: var(--rose);
+.icon-tile.danger {
+  color: var(--danger);
 }
 
 /* Buttons */
@@ -294,7 +299,7 @@ h2 {
   height: 56px;
   padding: 0 24px;
   border-radius: 999px;
-  color: #fff;
+  color: var(--on-brand);
   font-weight: 700;
   font-size: 15px;
   letter-spacing: 0.01em;
@@ -302,7 +307,7 @@ h2 {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: linear-gradient(110deg, var(--violet), var(--magenta), var(--coral), var(--magenta), var(--violet));
+  background: linear-gradient(110deg, var(--brand-1), var(--brand-2), var(--brand-3), var(--brand-2), var(--brand-1));
   background-size: 300% 100%;
   animation: drift 6s ease-in-out infinite alternate;
 }
@@ -316,7 +321,7 @@ h2 {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: sheen 1.3s var(--ease-emph) infinite;
 }
@@ -359,7 +364,7 @@ h2 {
   padding: 0;
 }
 .btn-glass.danger {
-  color: var(--rose);
+  color: var(--danger);
 }
 .btn-glass:disabled,
 .btn-aurora:disabled {
@@ -384,7 +389,7 @@ h2 {
   font-size: 12px;
 }
 .icon-btn[aria-pressed='true'] {
-  color: #fff;
+  color: var(--on-brand);
   border-color: transparent;
   background: var(--aurora);
 }
@@ -412,23 +417,23 @@ h2 {
   flex: none;
 }
 .ok .dot {
-  background: var(--mint);
+  background: var(--success);
 }
 .warn .dot {
-  background: var(--amber);
+  background: var(--warning);
 }
 .err .dot {
-  background: var(--rose);
+  background: var(--danger);
 }
 .busy .dot {
-  background: var(--iris);
+  background: var(--info);
   animation: pulse 1.4s ease-in-out infinite;
 }
 .live-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--on-brand);
   animation: pulse 1.4s ease-in-out infinite;
 }
 @keyframes pulse {
@@ -458,7 +463,7 @@ h2 {
   border: 1px solid var(--hairline);
 }
 .tag.sky {
-  color: var(--magenta);
+  color: var(--primary);
 }
 
 /* Switch */
@@ -514,7 +519,7 @@ h2 {
   white-space: nowrap;
 }
 .segmented button[aria-pressed='true'] {
-  color: #fff;
+  color: var(--on-brand);
 }
 .segmented .indicator {
   position: absolute;
@@ -572,7 +577,7 @@ h2 {
   transition: border-color var(--d-short) var(--ease-emph);
 }
 .field:focus {
-  border-color: var(--violet);
+  border-color: var(--brand-2);
 }
 .field.num {
   width: 92px;
@@ -688,16 +693,16 @@ textarea.field {
   display: grid;
   place-items: center;
   background: var(--aurora);
-  color: #fff;
+  color: var(--on-brand);
 }
 .logo svg {
   width: 22px;
   height: 22px;
-  fill: rgba(255, 255, 255, 0.95);
+  fill: var(--on-brand);
   stroke: none;
 }
 .logo svg circle {
-  fill: var(--violet);
+  fill: var(--brand-3);
 }
 .chips {
   display: flex;
@@ -705,7 +710,7 @@ textarea.field {
   flex-wrap: wrap;
 }
 #rec-sub.rec {
-  color: var(--rose);
+  color: var(--danger);
   font-weight: 600;
 }
 
@@ -851,7 +856,7 @@ textarea.field {
   flex: 1;
 }
 #btn-sky.active {
-  color: var(--magenta);
+  color: var(--primary);
 }
 #btn-sky svg {
   stroke-width: 2;
@@ -972,13 +977,13 @@ textarea.field {
   color: var(--text-3);
 }
 .badge.ok {
-  color: var(--mint);
+  color: var(--success);
 }
 .badge.warn {
-  color: var(--amber);
+  color: var(--warning);
 }
 .badge.rec {
-  color: var(--rose);
+  color: var(--danger);
 }
 .empty {
   text-align: center;
@@ -1028,7 +1033,7 @@ textarea.field {
   display: grid;
   place-items: center;
   background: var(--aurora);
-  color: #fff;
+  color: var(--on-brand);
   flex: none;
 }
 .play svg {
@@ -1066,7 +1071,7 @@ input[type='range']::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 999px;
   background:
-    linear-gradient(110deg, var(--violet), var(--magenta), var(--coral)) 0 0 / var(--p) 100% no-repeat,
+    linear-gradient(110deg, var(--brand-1), var(--brand-2), var(--brand-3)) 0 0 / var(--p) 100% no-repeat,
     var(--surface-3);
 }
 input[type='range']::-moz-range-track {
@@ -1152,7 +1157,7 @@ input[type='range']::-moz-range-thumb {
     opacity var(--d-short) var(--ease-emph);
 }
 .dock-tab[aria-current='page'] {
-  color: #fff;
+  color: var(--on-brand);
   background: var(--aurora);
 }
 .dock-tab[aria-current='page'] span {
@@ -1165,7 +1170,7 @@ input[type='range']::-moz-range-thumb {
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: rgba(5, 5, 10, 0.45);
+  background: rgba(3, 7, 15, 0.5);
   animation: fade-in var(--d-med) var(--ease-emph) both;
 }
 .sheet {
