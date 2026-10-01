@@ -1,6 +1,6 @@
 // Geodesy helpers: WGS84 local tangent-plane projection (x = East, y = North, metres),
 // great-circle distance and angle wrapping. Accurate to centimetres over a few km,
-// which is all a vessel-scale visualiser and skyhook distance need.
+// which is all a vessel-scale visualiser and marked-location distance need.
 
 export const D2R = Math.PI / 180;
 export const R2D = 180 / Math.PI;

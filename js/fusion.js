@@ -33,14 +33,14 @@ export class Fusion extends EventTarget {
     this.rateLP = null; // low-pass filtered, bias-corrected rate of turn, deg/s
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
-    this.skyhook = null; // { lat, lon, x, y, t, acc }
+    this.mark = null; // { lat, lon, x, y, t, acc }
     this.magAccuracy = null;
     this.mountMode = null; // flat | upright actually in use (resolves the 'auto' setting) // Android: magnetometer calibration 0 (unreliable) .. 3 (high)
     this.dev = new DeviationEstimator();
     this.magSum = { s: 0, c: 0, n: 0 }; // circular mean of raw compass since the last fix
     this.prevCog = null;
     this.devResidual = null; // last (COG - corrected compass), for diagnostics
-    this._restoreSkyhook();
+    this._restoreMark();
   }
 
   // ---------------------------------------------------------------- inputs
@@ -48,7 +48,7 @@ export class Fusion extends EventTarget {
   onGnss(fix) {
     if (!this.frame) {
       this.frame = new LocalFrame(fix.lat, fix.lon);
-      if (this.skyhook) Object.assign(this.skyhook, this.frame.toXY(this.skyhook.lat, this.skyhook.lon));
+      if (this.mark) Object.assign(this.mark, this.frame.toXY(this.mark.lat, this.mark.lon));
       this._emit('frame', { lat: fix.lat, lon: fix.lon });
     }
     this.gnss = fix;
@@ -197,38 +197,38 @@ export class Fusion extends EventTarget {
     if (this.frame && this.frame.lat0 === lat && this.frame.lon0 === lon) return;
     this.frame = new LocalFrame(lat, lon);
     this.pkf.reset();
-    if (this.skyhook) Object.assign(this.skyhook, this.frame.toXY(this.skyhook.lat, this.skyhook.lon));
+    if (this.mark) Object.assign(this.mark, this.frame.toXY(this.mark.lat, this.mark.lon));
     this._emit('frame', { lat, lon });
   }
 
-  // ---------------------------------------------------------------- skyhook
+  // ---------------------------------------------------------------- marked location
 
-  markSkyhook(t = Date.now()) {
+  markLocation(t = Date.now()) {
     const s = this.state(t);
     if (!s.hasFix) return null;
-    this.skyhook = { lat: s.lat, lon: s.lon, x: s.x, y: s.y, t, acc: s.acc };
-    this._saveSkyhook();
-    this._emit('skyhook', this.skyhook);
-    return this.skyhook;
+    this.mark = { lat: s.lat, lon: s.lon, x: s.x, y: s.y, t, acc: s.acc };
+    this._saveMark();
+    this._emit('mark', this.mark);
+    return this.mark;
   }
 
-  clearSkyhook() {
-    this.skyhook = null;
-    this._saveSkyhook();
-    this._emit('skyhook', null);
+  clearMark() {
+    this.mark = null;
+    this._saveMark();
+    this._emit('mark', null);
   }
 
-  _saveSkyhook() {
+  _saveMark() {
     try {
-      if (this.skyhook) localStorage.setItem('gnsslog.skyhook', JSON.stringify(this.skyhook));
-      else localStorage.removeItem('gnsslog.skyhook');
+      if (this.mark) localStorage.setItem('gnsslog.mark', JSON.stringify(this.mark));
+      else localStorage.removeItem('gnsslog.mark');
     } catch {}
   }
 
-  _restoreSkyhook() {
+  _restoreMark() {
     try {
-      const s = JSON.parse(localStorage.getItem('gnsslog.skyhook') || 'null');
-      if (s && Number.isFinite(s.lat)) this.skyhook = { ...s, x: NaN, y: NaN };
+      const s = JSON.parse(localStorage.getItem('gnsslog.mark') || localStorage.getItem('gnsslog.skyhook') || 'null');
+      if (s && Number.isFinite(s.lat)) this.mark = { ...s, x: NaN, y: NaN };
     } catch {}
   }
 
@@ -273,7 +273,7 @@ export class Fusion extends EventTarget {
       gnss: g,
       gnssAge: g ? t - g.t : null,
       sky: null,
-      skySpot: this.skyhook ? { lat: this.skyhook.lat, lon: this.skyhook.lon } : null,
+      markSpot: this.mark ? { lat: this.mark.lat, lon: this.mark.lon } : null,
     };
     if (hasFix) {
       out.x = p.x;
@@ -286,13 +286,13 @@ export class Fusion extends EventTarget {
       out.sog = Math.hypot(p.vx, p.vy);
       out.cog = out.sog > 0.2 ? bearingXY(p.vx, p.vy) : null;
     }
-    if (hasFix && this.skyhook && Number.isFinite(this.skyhook.x)) {
-      const dx = out.x - this.skyhook.x;
-      const dy = out.y - this.skyhook.y;
+    if (hasFix && this.mark && Number.isFinite(this.mark.x)) {
+      const dx = out.x - this.mark.x;
+      const dy = out.y - this.mark.y;
       out.sky = {
-        ...this.skyhook,
+        ...this.mark,
         dist: Math.hypot(dx, dy),
-        distGeo: haversine(this.skyhook.lat, this.skyhook.lon, out.lat, out.lon),
+        distGeo: haversine(this.mark.lat, this.mark.lon, out.lat, out.lon),
         // Bearing from the vessel back to the spot.
         brg: bearingXY(-dx, -dy),
         dx,

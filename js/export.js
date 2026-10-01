@@ -1,6 +1,6 @@
 // Local export of a recorded session (CSV of samples, or full JSON with events).
 
-import { SAMPLE_COLUMNS, SKY_EVENT_LABEL } from './recorder.js';
+import { SAMPLE_COLUMNS, MARK_EVENT_LABEL } from './recorder.js';
 import { publicMeta } from './sync.js';
 import { isNative, shareTextFile } from './native.js';
 
@@ -11,34 +11,34 @@ function csvCell(v) {
 }
 
 /**
- * Skyhook state per row from the session's events. Rows recorded before these columns
+ * Marked-location state per row from the session's events. Rows recorded before these columns
  * existed get them filled in; rows that already carry them are left as recorded.
  */
-export function withSkyhookColumns(samples, events = []) {
-  const evs = events.filter((e) => SKY_EVENT_LABEL[e.type]).sort((a, b) => a.seq - b.seq || a.t - b.t);
+export function withMarkColumns(samples, events = []) {
+  const evs = events.filter((e) => MARK_EVENT_LABEL[e.type]).sort((a, b) => a.seq - b.seq || a.t - b.t);
   let spot = null;
   let k = 0;
   return samples.map((row) => {
     const labels = [];
     while (k < evs.length && evs[k].seq <= row.seq) {
       const e = evs[k++];
-      spot = e.type === 'skyhook_clear' ? null : { lat: e.lat, lon: e.lon };
-      if (e.seq === row.seq) labels.push(SKY_EVENT_LABEL[e.type]);
+      spot = e.type === 'mark_clear' ? null : { lat: e.lat, lon: e.lon };
+      if (e.seq === row.seq) labels.push(MARK_EVENT_LABEL[e.type]);
     }
-    if (row.skyActive !== undefined) return row;
+    if (row.markActive !== undefined) return row;
     return {
       ...row,
-      skyActive: spot ? 1 : 0,
-      skyEvent: labels.join(';'),
-      skyLat: spot ? spot.lat : null,
-      skyLon: spot ? spot.lon : null,
+      markActive: spot ? 1 : 0,
+      markEvent: labels.join(';'),
+      markLat: spot ? spot.lat : null,
+      markLon: spot ? spot.lon : null,
     };
   });
 }
 
 export function toCSV(samples, events) {
   const lines = [SAMPLE_COLUMNS.join(',')];
-  for (const s of withSkyhookColumns(samples, events)) lines.push(SAMPLE_COLUMNS.map((k) => csvCell(s[k])).join(','));
+  for (const s of withMarkColumns(samples, events)) lines.push(SAMPLE_COLUMNS.map((k) => csvCell(s[k])).join(','));
   return lines.join('\n') + '\n';
 }
 

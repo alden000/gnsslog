@@ -4,6 +4,8 @@
 //   sync     : upload progress per session, keyPath 'sid' (kept apart from 'sessions' so
 //              the recorder and the uploader never overwrite each other's fields)
 
+import { upgradeSession, upgradeSample } from './compat.js';
+
 const DB_NAME = 'gnsslog';
 const DB_VERSION = 1;
 
@@ -56,19 +58,20 @@ class Store {
     await done(tx);
   }
 
-  getSession(id) {
-    return req(this.db.transaction('sessions').objectStore('sessions').get(id));
+  async getSession(id) {
+    return upgradeSession(await req(this.db.transaction('sessions').objectStore('sessions').get(id)));
   }
 
   async listSessions() {
     const all = await req(this.db.transaction('sessions').objectStore('sessions').getAll());
-    return all.sort((a, b) => b.createdAt - a.createdAt);
+    return all.map(upgradeSession).sort((a, b) => b.createdAt - a.createdAt);
   }
 
   /** Samples with from <= seq <= to (inclusive), at most `limit`. */
-  getSamples(sid, from = 0, to = Number.MAX_SAFE_INTEGER, limit) {
+  async getSamples(sid, from = 0, to = Number.MAX_SAFE_INTEGER, limit) {
     const range = IDBKeyRange.bound([sid, from], [sid, to]);
-    return req(this.db.transaction('samples').objectStore('samples').getAll(range, limit));
+    const rows = await req(this.db.transaction('samples').objectStore('samples').getAll(range, limit));
+    return rows.map(upgradeSample);
   }
 
   async deleteSession(sid) {

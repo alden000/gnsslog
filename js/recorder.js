@@ -1,5 +1,5 @@
 // Test-case recorder: owns the active session, turns fused state into 5 Hz sample rows,
-// buffers them and flushes to IndexedDB. Also logs events (start/stop/skyhook marks).
+// buffers them and flushes to IndexedDB. Also logs events (start/stop, marked locations).
 
 export const SAMPLE_HZ = 5;
 export const SAMPLE_INTERVAL = 1000 / SAMPLE_HZ;
@@ -11,13 +11,13 @@ export const SAMPLE_COLUMNS = [
   'lat', 'lon', 'x', 'y', 'vx', 'vy', 'sog', 'cog',
   'hdg', 'hdgMag', 'hdgRate', 'hdgSigma', 'hdgSrc', 'gyroRate', 'gyroBias', 'compass', 'compassDev', 'mount', 'pitch', 'roll',
   'posSigma', 'gnssAcc', 'gnssAge', 'gnssNew', 'gnssT', 'gnssLat', 'gnssLon', 'gnssAlt', 'gnssSpeed', 'gnssCog',
-  'skyActive', 'skyEvent', 'skyLat', 'skyLon', 'skyDist', 'skyBrg',
+  'markActive', 'markEvent', 'markLat', 'markLon', 'markDist', 'markBrg',
 ];
 
 const r = (v, d) => (v === null || v === undefined || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
 
-/** Short label for the skyEvent column: the row whose seq equals the event's seq gets it. */
-export const SKY_EVENT_LABEL = { skyhook: 'mark', skyhook_clear: 'clear', skyhook_active: 'active' };
+/** Short label for the markEvent column: the row whose seq equals the event's seq gets it. */
+export const MARK_EVENT_LABEL = { mark: 'mark', mark_clear: 'clear', mark_active: 'active' };
 
 export function sampleFromState(s, sid, seq, lastGnssT) {
   const g = s.gnss;
@@ -56,12 +56,12 @@ export function sampleFromState(s, sid, seq, lastGnssT) {
     gnssAlt: g ? r(g.alt, 2) : null,
     gnssSpeed: g ? r(g.speed, 3) : null,
     gnssCog: g ? r(g.cog, 2) : null,
-    skyActive: s.skySpot ? 1 : 0,
-    skyEvent: '',
-    skyLat: s.skySpot ? s.skySpot.lat : null,
-    skyLon: s.skySpot ? s.skySpot.lon : null,
-    skyDist: s.sky ? r(s.sky.dist, 3) : null,
-    skyBrg: s.sky ? r(s.sky.brg, 2) : null,
+    markActive: s.markSpot ? 1 : 0,
+    markEvent: '',
+    markLat: s.markSpot ? s.markSpot.lat : null,
+    markLon: s.markSpot ? s.markSpot.lon : null,
+    markDist: s.sky ? r(s.sky.dist, 3) : null,
+    markBrg: s.sky ? r(s.sky.brg, 2) : null,
   };
 }
 
@@ -141,18 +141,18 @@ export class Recorder extends EventTarget {
   }
 
   /** Continue an interrupted session after the app was reopened. */
-  async resumeSession(session, lastT, skyhook = null) {
+  async resumeSession(session, lastT, mark = null) {
     if (this.session) return;
     this.session = session;
     this.seq = session.sampleCount;
     this.buffer = [];
     this.lastGnssT = null;
     this.segment = session.segment || 0;
-    this.pendingSky = [];
+    this.pendingMark = [];
     this.paused = true;
-    if (skyhook) {
-      session.events.push(skyhookEvent('skyhook_active', skyhook, this.seq));
-      this.pendingSky.push('active');
+    if (mark) {
+      session.events.push(markEventData('mark_active', mark, this.seq));
+      this.pendingMark.push('active');
     }
     this._resumed('reopened', Date.now() - lastT);
     await this.db.putSession(this.session);
@@ -179,13 +179,13 @@ export class Recorder extends EventTarget {
     }
   }
 
-  async start({ name, notes = '', origin = null, skyhook = null }) {
+  async start({ name, notes = '', origin = null, mark = null }) {
     if (this.session) return this.session;
     const now = Date.now();
     this.seq = 0;
     this.buffer = [];
     this.lastGnssT = null;
-    this.pendingSky = skyhook ? ['active'] : [];
+    this.pendingMark = mark ? ['active'] : [];
     this.segment = 0;
     this.paused = false;
     this.session = {
@@ -206,7 +206,7 @@ export class Recorder extends EventTarget {
       config: this.settings.snapshot(),
       app: { version: window.GNSSLOG_VERSION || 'dev' },
     };
-    if (skyhook) this.session.events.push(skyhookEvent('skyhook_active', skyhook, 0));
+    if (mark) this.session.events.push(markEventData('mark_active', mark, 0));
     await this.db.putSession(this.session);
     this._acquireWakeLock();
     this._emit('change');
@@ -219,9 +219,9 @@ export class Recorder extends EventTarget {
     if (!this.session.origin && state.origin) this.session.origin = state.origin;
     const row = sampleFromState(state, this.session.id, this.seq++, this.lastGnssT);
     row.segment = this.segment;
-    if (this.pendingSky?.length) {
-      row.skyEvent = this.pendingSky.join(';');
-      this.pendingSky = [];
+    if (this.pendingMark?.length) {
+      row.markEvent = this.pendingMark.join(';');
+      this.pendingMark = [];
     }
     if (state.gnss) this.lastGnssT = state.gnss.t;
     this.buffer.push(row);
@@ -248,14 +248,14 @@ export class Recorder extends EventTarget {
   async logEvent(type, data = {}) {
     if (!this.session) return;
     this.session.events.push({ type, t: Date.now(), seq: this.seq, ...data });
-    if (SKY_EVENT_LABEL[type]) (this.pendingSky ||= []).push(SKY_EVENT_LABEL[type]);
+    if (MARK_EVENT_LABEL[type]) (this.pendingMark ||= []).push(MARK_EVENT_LABEL[type]);
     this.session.metaVersion++;
     await this.flush();
     this._emit('change');
   }
 
-  markSkyhook(sky) {
-    return this.logEvent('skyhook', skyhookEvent('skyhook', sky).data);
+  markLocation(spot) {
+    return this.logEvent('mark', markEventData('mark', spot).data);
   }
 
   async rename(name, notes) {
@@ -304,7 +304,7 @@ export class Recorder extends EventTarget {
   }
 }
 
-function skyhookEvent(type, sky, seq) {
+function markEventData(type, sky, seq) {
   const data = { lat: sky.lat, lon: sky.lon, x: sky.x, y: sky.y, acc: sky.acc ?? null, markedAt: sky.t };
   return seq === undefined ? { type, data } : { type, t: Date.now(), seq, ...data };
 }

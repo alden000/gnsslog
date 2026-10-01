@@ -1,5 +1,5 @@
 // End-to-end smoke test: simulated GNSS + compass/gyro on a phone-sized Chromium.
-// Records a test case, marks a skyhook, syncs to the reference receiver, opens playback.
+// Records a test case, marks a location, syncs to the reference receiver, opens playback.
 // Usage: node tests/e2e/smoke.mjs [outDir]   (writes screenshots to outDir)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -67,9 +67,9 @@ try {
   await sleep(2000);
   await page.click('#btn-sky');
   await sleep(4000);
-  await page.screenshot({ path: join(out, '2-skyhook.png') });
+  await page.screenshot({ path: join(out, '2-mark.png') });
   const skyText = await page.textContent('#sky-dist');
-  assert.match(skyText, /m$/, 'skyhook distance shown');
+  assert.match(skyText, /m$/, 'mark distance shown');
 
   await page.click('#btn-sky-clear');
   await sleep(1200);
@@ -91,12 +91,12 @@ try {
       events: s.events.map((e) => e.type),
       hdg: rows.at(-1).hdg,
       hasXY: rows.at(-1).x !== null,
-      sky: rows.find((r) => r.skyDist !== null)?.skyDist,
-      skyEvents: rows.filter((r) => r.skyEvent).map((r) => `${r.seq}:${r.skyEvent}`),
-      skyActive: rows.map((r) => r.skyActive).join(''),
+      sky: rows.find((r) => r.markDist !== null)?.markDist,
+      markEvents: rows.filter((r) => r.markEvent).map((r) => `${r.seq}:${r.markEvent}`),
+      markActive: rows.map((r) => r.markActive).join(''),
       markRow: (() => {
-        const m = rows.find((r) => r.skyEvent === 'mark');
-        return m && { active: m.skyActive, lat: m.skyLat, prevActive: rows[m.seq - 1].skyActive, eventSeq: s.events.find((e) => e.type === 'skyhook').seq, seq: m.seq };
+        const m = rows.find((r) => r.markEvent === 'mark');
+        return m && { active: m.markActive, lat: m.markLat, prevActive: rows[m.seq - 1].markActive, eventSeq: s.events.find((e) => e.type === 'mark').seq, seq: m.seq };
       })(),
     };
   });
@@ -104,10 +104,10 @@ try {
   assert.equal(info.name, 'E2E run');
   assert.ok(Math.abs(info.meanDt - 200) < 15, `mean sample interval ${info.meanDt} ms`);
   assert.ok(info.count >= info.durS * 5 * 0.9, 'about 5 samples per second');
-  assert.deepEqual(info.events, ['start', 'skyhook', 'skyhook_clear', 'stop']);
-  assert.equal(info.skyEvents.length, 2, `sky events ${info.skyEvents}`);
-  assert.match(info.skyEvents.join(' '), /^\d+:mark \d+:clear$/);
-  assert.match(info.skyActive, /^0+1+0+$/, 'active only between mark and clear');
+  assert.deepEqual(info.events, ['start', 'mark', 'mark_clear', 'stop']);
+  assert.equal(info.markEvents.length, 2, `sky events ${info.markEvents}`);
+  assert.match(info.markEvents.join(' '), /^\d+:mark \d+:clear$/);
+  assert.match(info.markActive, /^0+1+0+$/, 'active only between mark and clear');
   assert.equal(info.markRow.seq, info.markRow.eventSeq, 'mark flagged on the event row');
   assert.equal(info.markRow.active, 1);
   assert.equal(info.markRow.prevActive, 0);

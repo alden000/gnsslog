@@ -1,7 +1,7 @@
 {
   "name": "GNSS Log — Vessel Logger",
   "short_name": "GNSS Log",
-  "description": "Log vessel position, speed and heading at 5 Hz, with a skyhook station-keeping view.",
+  "description": "Log position, speed and heading at 5 Hz, mark locations and measure distance to them.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

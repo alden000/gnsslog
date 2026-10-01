@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <title>GNSS Log</title>
-    <meta name="description" content="Vessel position and heading logger with skyhook station-keeping view." />
+    <meta name="description" content="Position, speed and heading logger with a mark-and-measure view." />
     <meta name="theme-color" content="#041113" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
@@ -80,7 +80,7 @@
           </button>
           <a class="map-attrib" target="_blank" rel="noopener" hidden></a>
           <div class="sky-readout" id="sky-readout" hidden>
-            <span class="section-label">Distance to skyhook</span>
+            <span class="section-label">Distance to mark</span>
             <b class="tnum" id="sky-dist">—</b>
             <span class="tnum sky-sub" id="sky-sub">—</span>
           </div>
@@ -99,9 +99,9 @@
         <div class="actions reveal" style="--i: 4">
           <button class="btn-glass pressable" id="btn-sky">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v5M12 17v5M2 12h5M17 12h5" /></svg>
-            <span id="btn-sky-label">Skyhook</span>
+            <span id="btn-sky-label">Mark Location</span>
           </button>
-          <button class="btn-glass pressable icon-only" id="btn-sky-clear" aria-label="Clear skyhook" hidden>
+          <button class="btn-glass pressable icon-only" id="btn-sky-clear" aria-label="Clear mark" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
           <button class="btn-aurora pressable" id="btn-rec">
@@ -284,7 +284,7 @@
         </button>
         <a class="map-attrib" target="_blank" rel="noopener" hidden></a>
         <div class="sky-readout" id="pb-sky" hidden>
-          <span class="section-label">Distance to skyhook</span>
+          <span class="section-label">Distance to mark</span>
           <b class="tnum" id="pb-sky-dist">—</b>
           <span class="tnum sky-sub" id="pb-sky-sub">—</span>
         </div>

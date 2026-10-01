@@ -1,8 +1,8 @@
 import { MAP_SOURCES, SEAMARKS, TileCache, drawTileLayer } from './maptiles.js';
 
 // Top-down (x = East, y = North) canvas visualiser.
-// Centre is the vessel, or the skyhook spot when one is marked. Breadcrumbs, range rings,
-// the vessel glyph, the skyhook marker and the vessel<->spot line are drawn relative to it.
+// Centre is the vessel, or the marked location when one is set. Breadcrumbs, range rings,
+// the vessel glyph, the mark and the vessel<->spot line are drawn relative to it.
 
 const NICE = [1, 2, 5];
 
@@ -273,7 +273,7 @@ export class Visualizer {
       }
     }
 
-    // Skyhook spot + tether line + distance label.
+    // Marked location + line to the vessel + distance label.
     if (sky) {
       const [sx, sy] = toScreen(sky.x, sky.y);
       const grad = ctx.createLinearGradient(sx, sy, vx, vy);
@@ -516,7 +516,7 @@ export class Visualizer {
     const { ctx, c, mpp } = this;
     const m = niceStep(this.w * 0.22 * mpp);
     const px = m / mpp;
-    const x = 16, y = 66; // top-left, under the mode tag (bottom is the skyhook readout)
+    const x = 16, y = 66; // top-left, under the mode tag (bottom is the mark distance readout)
     ctx.beginPath();
     ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + px, y); ctx.lineTo(x + px, y - 5);
     ctx.lineCap = 'round';

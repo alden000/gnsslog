@@ -3,12 +3,13 @@
 A Progressive Web App that turns a phone (iPhone or Android) into a vessel sensor and recorder.
 It logs position, speed, x/y velocity and heading at **5 Hz** with timestamps, keeps every test
 case on the device, uploads it to your cloud endpoint whenever there is a connection, and shows a
-top-down plot with breadcrumbs and a **Skyhook** station-keeping view.
+top-down plot with breadcrumbs and a **Mark Location** view that measures live distance and
+bearing back to a marked spot (e.g. station keeping, drift tests, returning to a waypoint).
 
 UI follows the "Aurora Ink" design rules (dark/light/system themes, glass surfaces, gradient
 only on the primary actions) remixed to a **"Tidewater" sea-teal and coral** palette: teal and coral are complementary, so
 the deep-teal canvas stays calm while coral marks the things you act on (record, selected tab,
-switches, the vessel). Breadcrumbs and the skyhook marker are aqua so they read against the
+switches, the vessel). Breadcrumbs and the location mark are aqua so they read against the
 coral vessel.
 
 | Token | Dark | Light |
@@ -17,7 +18,7 @@ coral vessel.
 | Surfaces | `#0A1A1D` / `#0F2428` / `#173236` | `#FFFFFF` / `#E3F0EE` / `#D2E5E2` |
 | Text | `#EEF6F4` / `#9CB9B6` / `#5E7D7A` | `#072226` / `#3F5E5D` / `#86A19F` |
 | Coral gradient | `#F2685A` → `#FF8A6B` → `#FFBB8F` (ink `#2A0F0B` on top) | same; accent text `#C2412F` |
-| Aqua (trail, skyhook) | `#2DD4BF` / `#5EEAD4` | `#0F766E` / `#0E7490` |
+| Aqua (trail, mark) | `#2DD4BF` / `#5EEAD4` | `#0F766E` / `#0E7490` |
 | Status | success `#4ADE80`, warning `#FACC15`, error `#FF3D6E` | same |
 
 All colours are tokens at the top of `css/app.css`; the canvas plot reads them at runtime.
@@ -31,12 +32,12 @@ All colours are tokens at the top of `css/app.css`; the canvas plot reads them a
 | Compass deviation | Learns heading-dependent compass error (magnets such as MagSafe rings, steel, mounts) from GNSS course while running straight above ~4 kn, using the ship's-compass model A + B·sinθ + C·cosθ + D·sin2θ + E·cos2θ. Applied to the compass before the heading filter. Toggle and reset in Settings → Heading sensor; it also absorbs average crab angle, so reset it if you change the mount. |
 | Position filter | 4-state constant-velocity Kalman filter (x, y, vx, vy) in a local East/North frame. Fuses GNSS position and GNSS (Doppler) velocity and gives a smooth 5 Hz track from a ~1 Hz receiver. |
 | Logging | 5 Hz on a drift-free 200 ms grid. Each row has the fused state and the raw inputs (see [columns](#sample-columns)). Start/stop with a name and notes per test case. Sessions left open by a crash or a killed tab are closed on the next launch and marked *interrupted*. |
-| Skyhook | Marks the current fused position. The plot recentres on the spot, draws a line to the vessel and shows the live distance and bearing. Every mark/clear is logged with time and position (also when a recording starts with a spot already set). |
-| Visualiser | Vessel-centred (or skyhook-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, dashed 30 s velocity vector (where the vessel will be in 30 s on its current course and speed), range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
+| Mark Location | Marks the current fused position. The plot recentres on the mark, draws a line to the vessel and shows the live distance and bearing. Every mark/clear is logged with time and position (also when a recording starts with a mark already set). |
+| Visualiser | Vessel-centred (or mark-centred) top-down plot, north-up or heading-up, fading breadcrumb trail, GNSS accuracy disc, dashed 30 s velocity vector (where the vessel will be in 30 s on its current course and speed), range rings, scale bar, auto-range, pinch/wheel zoom (double-tap returns to auto). |
 | Map background | Optional **Street** or **Satellite** map under the live plot and playback (map button on the plot, or Settings → Map), plus OpenSeaMap **nautical marks** (buoys, beacons, lights). Tiles are placed through the same local frame as the track, so they line up exactly and rotate with heading-up. Street is drawn inverted in dark theme. The web app keeps viewed tiles (up to ~3,000) for offline use. Tiles: Esri World Street Map / World Imagery, OpenSeaMap; credits are shown on the plot. |
 | Storage | IndexedDB on the device. "Keep data" asks the browser for persistent storage. |
 | Sync | Chunked JSON POSTs to your endpoint, resumable per session, retried with back-off, triggered when online, every 20 s, after a stop, or with "Sync now". Optional auth header. |
-| Playback | Replays any session on the same plot with a scrubber and 1–30× speed, including skyhook marks at the time they were made. |
+| Playback | Replays any session on the same plot with a scrubber and 1–30× speed, including marked locations at the time they were made. |
 | Export | CSV (samples) or JSON (session + events + samples), via the share sheet on phones. |
 | Offline | Service worker caches the app shell (and web fonts after first load). Installable to the home screen. |
 
@@ -138,9 +139,9 @@ Each request carries the full session metadata plus one chunk of samples (up to 
     "origin": { "lat": 1.264, "lon": 103.84 },
     "events": [
       { "type": "start", "t": 1790838000000, "seq": 0 },
-      { "type": "skyhook", "t": 1790838012000, "seq": 60, "lat": 1.2640123, "lon": 103.8400456,
+      { "type": "mark", "t": 1790838012000, "seq": 60, "lat": 1.2640123, "lon": 103.8400456,
         "x": 1.32, "y": 1.37, "acc": 3.1, "markedAt": 1790838012000 },
-      { "type": "skyhook_clear", "t": 1790838200000, "seq": 1000 },
+      { "type": "mark_clear", "t": 1790838200000, "seq": 1000 },
       { "type": "pause", "t": 1790838300000, "seq": 1500, "reason": "background" },
       { "type": "resume", "t": 1790838330000, "seq": 1500, "reason": "foreground", "gapMs": 30000, "segment": 1 },
       { "type": "stop", "t": 1790838360000, "seq": 1800 }
@@ -165,6 +166,10 @@ Each request carries the full session metadata plus one chunk of samples (up to 
 and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to require
 `Authorization: Bearer <token>`.
 
+Event types: `start`, `stop`, `pause`, `resume`, `mark`, `mark_clear`, `mark_active`. Sessions
+recorded before v0.7.0 stored marks as `skyhook*` events and `sky*` columns; the app upgrades them
+to the names above when they are played back, exported or uploaded.
+
 ### Sample columns
 
 | Column | Meaning |
@@ -186,10 +191,10 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | `posSigma` | Position filter 1σ (m) |
 | `gnssAcc`, `gnssAge`, `gnssNew` | Last fix accuracy (m), its age (ms), 1 if the fix is new on this row |
 | `gnssT`, `gnssLat`, `gnssLon`, `gnssAlt`, `gnssSpeed`, `gnssCog` | Raw last fix |
-| `skyActive` | 1 while a skyhook spot is set, else 0 |
-| `skyEvent` | On the row where it happened: `mark` (marked or re-marked), `clear`, or `active` (spot already set when the recording started); empty otherwise |
-| `skyLat`, `skyLon` | The active skyhook spot (empty when none) |
-| `skyDist`, `skyBrg` | Distance (m) and bearing (°T) from the vessel to the skyhook spot |
+| `markActive` | 1 while a location is marked, else 0 |
+| `markEvent` | On the row where it happened: `mark` (marked or re-marked), `clear`, or `active` (a mark was already set when the recording started); empty otherwise |
+| `markLat`, `markLon` | The marked location (empty when none) |
+| `markDist`, `markBrg` | Distance (m) and bearing (°T) from the vessel to the marked location |
 
 ## Code map
 
@@ -200,7 +205,8 @@ js/app.js             wiring, 5 Hz ticker, UI
 js/sensors.js         Geolocation / DeviceOrientation / DeviceMotion + iOS permissions
 js/attitude.js        rotation maths: mount heading, gyro yaw projection
 js/filters.js         HeadingKF, PositionKF
-js/fusion.js          sensor fusion, skyhook state
+js/fusion.js          sensor fusion, marked location
+js/compat.js          read-time upgrade of data from older versions
 js/recorder.js        sessions, 5 Hz rows, events, wake lock
 js/db.js              IndexedDB
 js/sync.js            chunked resumable uploader

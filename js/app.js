@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.6.3';
+const VERSION = '0.7.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -249,7 +249,7 @@ function renderLive(s) {
     $('#sky-sub').textContent = `bearing ${fmtDeg(sky.brg)} · marked ${fmtDuration(Date.now() - sky.t)} ago`;
   }
   const mode = $('#viz-mode');
-  mode.textContent = sky ? 'Skyhook centred' : 'Vessel centred';
+  mode.textContent = sky ? 'Mark centred' : 'Vessel centred';
   mode.classList.toggle('sky', !!sky);
 
   // Status chips.
@@ -302,34 +302,34 @@ recorder.addEventListener('resumed', (e) => {
 recorder.addEventListener('error', (e) => toast(`Storage error: ${e.detail?.message || e.detail}`, { kind: 'err' }));
 
 function renderSkyButtons() {
-  const on = !!fusion.skyhook;
+  const on = !!fusion.mark;
   $('#btn-sky').classList.toggle('active', on);
-  $('#btn-sky-label').textContent = on ? 'Re-mark' : 'Skyhook';
+  $('#btn-sky-label').textContent = on ? 'Re-mark' : 'Mark Location';
   $('#btn-sky-clear').hidden = !on;
 }
-fusion.addEventListener('skyhook', renderSkyButtons);
+fusion.addEventListener('mark', renderSkyButtons);
 
 $('#btn-sky').onclick = async () => {
-  const sky = fusion.markSkyhook();
+  const sky = fusion.markLocation();
   if (!sky) {
     toast('No position yet — wait for a GNSS fix', { kind: 'warn' });
     return;
   }
   navigator.vibrate?.(30);
-  if (recorder.active) await recorder.markSkyhook(sky);
-  toast(`Skyhook marked${recorder.active ? ' and logged' : ''} · ${fmtLL(sky.lat, sky.lon)}`, { kind: 'ok' });
+  if (recorder.active) await recorder.markLocation(sky);
+  toast(`Location marked${recorder.active ? ' and logged' : ''} · ${fmtLL(sky.lat, sky.lon)}`, { kind: 'ok' });
 };
 $('#btn-sky-clear').onclick = async () => {
-  const prev = fusion.skyhook;
-  fusion.clearSkyhook();
-  if (recorder.active) await recorder.logEvent('skyhook_clear');
-  toast('Skyhook cleared', {
+  const prev = fusion.mark;
+  fusion.clearMark();
+  if (recorder.active) await recorder.logEvent('mark_clear');
+  toast('Mark cleared', {
     action: 'Undo',
     onAction: async () => {
-      fusion.skyhook = prev;
-      fusion._saveSkyhook();
-      fusion.dispatchEvent(new CustomEvent('skyhook', { detail: prev }));
-      if (recorder.active) await recorder.markSkyhook(prev);
+      fusion.mark = prev;
+      fusion._saveMark();
+      fusion.dispatchEvent(new CustomEvent('mark', { detail: prev }));
+      if (recorder.active) await recorder.markLocation(prev);
     },
   });
 };
@@ -386,7 +386,7 @@ $('#btn-rec').onclick = () => {
           name: name.value.trim(),
           notes: $('#new-notes', sheet).value.trim(),
           origin,
-          skyhook: fusion.skyhook && Number.isFinite(fusion.skyhook.x) ? fusion.skyhook : null,
+          mark: fusion.mark && Number.isFinite(fusion.mark.x) ? fusion.mark : null,
         });
         close();
         navigator.vibrate?.(30);
@@ -479,7 +479,7 @@ function showResume({ session, lastT }) {
         decided = true;
         close();
         if (session.origin) fusion.setOrigin(session.origin.lat, session.origin.lon);
-        const sky = fusion.skyhook && Number.isFinite(fusion.skyhook.x) ? fusion.skyhook : null;
+        const sky = fusion.mark && Number.isFinite(fusion.mark.x) ? fusion.mark : null;
         await recorder.resumeSession(session, lastT, sky);
         if (!sensors.running || !sensors.motionStarted) await enableSensors(); // this tap grants motion access
         toast('Recording continued', { kind: 'ok' });
@@ -585,11 +585,11 @@ async function renderSessions() {
       else if (synced >= s.sampleCount && metaOk) badge = '<span class="badge ok">Uploaded</span>';
       else if (synced > 0) badge = `<span class="badge warn">${Math.floor((100 * synced) / Math.max(1, s.sampleCount))}%</span>`;
       else badge = '<span class="badge">On device</span>';
-      const skyCount = s.events.filter((e) => e.type === 'skyhook').length;
+      const skyCount = s.events.filter((e) => e.type === 'mark').length;
       return `<button class="session glass pressable${animate ? ' reveal' : ''}" style="--i:${Math.min(i + 2, 10)}" data-id="${s.id}">
         <span class="icon-tile ${live ? 'danger' : ''}" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17c3-1 4-6 9-6s6 5 9 6" /><circle cx="12" cy="7" r="2.5" /></svg></span>
         <span class="meta"><strong>${esc(s.name)}</strong>
-          <span class="tnum">${fmtDate(s.startedAt)} · ${fmtDuration(dur)} · ${count} pts${skyCount ? ` · ${skyCount} skyhook` : ''}${s.interrupted ? ' · interrupted' : ''}</span></span>
+          <span class="tnum">${fmtDate(s.startedAt)} · ${fmtDuration(dur)} · ${count} pts${skyCount ? ` · ${skyCount} mark${skyCount > 1 ? 's' : ''}` : ''}${s.interrupted ? ' · interrupted' : ''}</span></span>
         ${badge}
       </button>`;
     })
@@ -605,7 +605,7 @@ async function openSessionSheet(id) {
   const st = await db.getSync(id);
   const synced = st ? st.syncedSeq + 1 : 0;
   const dur = (live ? Date.now() : s.endedAt || s.startedAt) - s.startedAt;
-  const skyEvents = s.events.filter((e) => e.type === 'skyhook' || e.type === 'skyhook_active');
+  const markEvents = s.events.filter((e) => e.type === 'mark' || e.type === 'mark_active');
   openSheet(
     `<h3>Session</h3>
      <p class="sub tnum">${fmtDate(s.startedAt)}${live ? ' · recording' : ''}${s.interrupted ? ' · interrupted' : ''}</p>
@@ -619,7 +619,7 @@ async function openSessionSheet(id) {
          <div class="tile"><span class="section-label">Samples</span><b class="tnum">${live ? recorder.seq : s.sampleCount}</b></div>
          <div class="tile"><span class="section-label">Uploaded</span><b class="tnum">${s.sampleCount ? Math.floor((100 * synced) / s.sampleCount) : 0}%</b></div>
        </div>
-       ${skyEvents.length ? `<p class="hint tnum">Skyhook marks: ${skyEvents.map((e) => `${new Date(e.t).toLocaleTimeString()} (${e.lat.toFixed(6)}, ${e.lon.toFixed(6)})`).join(' · ')}</p>` : ''}
+       ${markEvents.length ? `<p class="hint tnum">Marked locations: ${markEvents.map((e) => `${new Date(e.t).toLocaleTimeString()} (${e.lat.toFixed(6)}, ${e.lon.toFixed(6)})`).join(' · ')}</p>` : ''}
        <button class="btn-aurora pressable" data-act="play" ${s.sampleCount ? '' : 'disabled'}><span>Play back</span></button>
        <div class="btn-pair">
          <button class="btn-glass pressable" data-act="csv">Export CSV</button>
@@ -758,11 +758,11 @@ async function openPlayback(id) {
   pb.samples = samples;
   pb.pts = samples.map((s) => (isNum(s.lat) ? frame.toXY(s.lat, s.lon) : null));
   pb.frame = frame;
-  // Skyhook timeline: [{ t, spot | null }]
+  // Marked-location timeline: [{ t, spot | null }]
   pb.sky = session.events
-    .filter((e) => ['skyhook', 'skyhook_active', 'skyhook_clear'].includes(e.type))
+    .filter((e) => ['mark', 'mark_active', 'mark_clear'].includes(e.type))
     .sort((a, b) => a.t - b.t)
-    .map((e) => ({ t: e.type === 'skyhook_active' ? session.startedAt : e.t, spot: e.type === 'skyhook_clear' ? null : { ...frame.toXY(e.lat, e.lon), lat: e.lat, lon: e.lon, markedAt: e.markedAt ?? e.t } }));
+    .map((e) => ({ t: e.type === 'mark_active' ? session.startedAt : e.t, spot: e.type === 'mark_clear' ? null : { ...frame.toXY(e.lat, e.lon), lat: e.lat, lon: e.lon, markedAt: e.markedAt ?? e.t } }));
   pb.t0 = samples[0].t;
   pb.t1 = samples[samples.length - 1].t;
   pb.t = pb.t0;
@@ -878,7 +878,7 @@ function playbackFrame() {
     $('#pb-sky-dist').textContent = fmtDist(sky.dist);
     $('#pb-sky-sub').textContent = `bearing ${fmtDeg(sky.brg)}`;
   }
-  $('#pb-mode').textContent = sky ? 'Skyhook centred' : 'Vessel centred';
+  $('#pb-mode').textContent = sky ? 'Mark centred' : 'Vessel centred';
   $('#pb-mode').classList.toggle('sky', !!sky);
   const scrub = $('#pb-scrub');
   const rel = pb.t - pb.t0;
