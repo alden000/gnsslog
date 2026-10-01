@@ -1,3 +1,5 @@
+import { MAP_SOURCES, SEAMARKS, TileCache, drawTileLayer } from './maptiles.js';
+
 // Top-down (x = East, y = North) canvas visualiser.
 // Centre is the vessel, or the skyhook spot when one is marked. Breadcrumbs, range rings,
 // the vessel glyph, the skyhook marker and the vessel<->spot line are drawn relative to it.
@@ -32,10 +34,33 @@ export class Visualizer {
     this.pointers = new Map();
     this.pinch = null;
     this._readColors();
+    this.tiles = new TileCache();
+    this.mapBase = null; // null | 'street' | 'satellite'
+    this.mapSeamarks = false;
+    this.mapDark = true;
     this._resize();
     new ResizeObserver(() => this._resize()).observe(canvas);
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this._readColors());
     this._bindGestures();
+  }
+
+  /** Map background: base 'street' | 'satellite' | null, optional OpenSeaMap seamarks. */
+  setMap({ base = null, seamarks = false, dark = true } = {}) {
+    this.mapBase = MAP_SOURCES[base] ? base : null;
+    this.mapSeamarks = !!seamarks;
+    this.mapDark = dark;
+  }
+
+  _drawMap(frame, center, rot) {
+    const view = { geo: frame.geo, center, mpp: this.mpp, rot, w: this.w, h: this.h, dpr: this.dpr };
+    drawTileLayer(this.ctx, this.tiles, MAP_SOURCES[this.mapBase], view, { dark: this.mapDark });
+    // Soften the map so the track, rings and labels stay readable on top of it.
+    const { ctx } = this;
+    ctx.fillStyle = this.c.canvas;
+    ctx.globalAlpha = this.mapBase === 'satellite' ? (this.mapDark ? 0.3 : 0.12) : this.mapDark ? 0.2 : 0.1;
+    ctx.fillRect(0, 0, this.w, this.h);
+    ctx.globalAlpha = 1;
+    if (this.mapSeamarks) drawTileLayer(ctx, this.tiles, SEAMARKS, view);
   }
 
   refreshTheme() {
@@ -194,6 +219,7 @@ export class Visualizer {
       return [cx + rx / mpp, cy - ry / mpp];
     };
 
+    if (this.mapBase && frame.geo) this._drawMap(frame, center, rot);
     this._drawRings(cx, cy, R, rot);
 
     // Breadcrumbs: oldest fade out, newest brightest.
@@ -388,7 +414,7 @@ export class Visualizer {
 
   _drawNorth(rot) {
     const { ctx, c } = this;
-    const x = this.w - 26, y = this.h - 30; // bottom-right, clear of the controls
+    const x = this.w - 26, y = this.h - 46; // bottom-right, above the map credit line
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate((-rot * Math.PI) / 180);

@@ -1,7 +1,7 @@
 // Service worker: offline app shell (cache-first, versioned) + runtime cache for fonts.
 // Uploads (POST) and any other cross-origin request are never intercepted.
 
-const VERSION = 'gnsslog-v0.5.1';
+const VERSION = 'gnsslog-v0.6.0';
 const SHELL = [
   './',
   'index.html',
@@ -15,6 +15,7 @@ const SHELL = [
   'js/filters.js',
   'js/fusion.js',
   'js/geo.js',
+  'js/maptiles.js',
   'js/native.js',
   'js/recorder.js',
   'js/sensors.js',
@@ -27,6 +28,15 @@ const SHELL = [
   'icons/apple-touch-icon.png',
 ];
 const FONT_CACHE = 'gnsslog-fonts';
+const TILE_CACHE = 'gnsslog-tiles';
+const TILE_HOSTS = /(^|\.)(server\.arcgisonline\.com|tiles\.openseamap\.org)$/;
+const TILE_LIMIT = 3000; // ~30-60 MB; oldest are dropped first
+let tilePuts = 0;
+
+async function trimTiles(cache) {
+  const keys = await cache.keys();
+  for (let i = 0; i < keys.length - TILE_LIMIT; i++) await cache.delete(keys[i]);
+}
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)));
@@ -35,7 +45,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     (async () => {
-      for (const k of await caches.keys()) if (k !== VERSION && k !== FONT_CACHE) await caches.delete(k);
+      for (const k of await caches.keys()) if (k !== VERSION && k !== FONT_CACHE && k !== TILE_CACHE) await caches.delete(k);
       await self.clients.claim();
     })(),
   );
@@ -62,6 +72,23 @@ self.addEventListener('fetch', (e) => {
         } catch {
           return new Response('', { status: 504 });
         }
+      }),
+    );
+    return;
+  }
+
+  // Map tiles: cache-first so tiles already viewed still show offline (e.g. at sea).
+  if (TILE_HOSTS.test(url.hostname)) {
+    e.respondWith(
+      caches.open(TILE_CACHE).then(async (c) => {
+        const hit = await c.match(req);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res.ok) {
+          await c.put(req, res.clone());
+          if (++tilePuts % 100 === 0) trimTiles(c);
+        }
+        return res;
       }),
     );
     return;

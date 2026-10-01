@@ -11,8 +11,9 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
+import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -209,6 +210,7 @@ viz.start(() => {
   return {
     vessel: { x: s.x, y: s.y, hdg: s.hdg, acc: s.acc, vx: s.vx, vy: s.vy },
     trail: trail.concat([{ x: s.x, y: s.y }]),
+    geo: fusion.frame, // lets the visualiser place map tiles
     sky: s.sky,
     headingUp: settings.get('orientUp') === 'heading',
   };
@@ -750,6 +752,7 @@ async function openPlayback(id) {
   pb.session = session;
   pb.samples = samples;
   pb.pts = samples.map((s) => (isNum(s.lat) ? frame.toXY(s.lat, s.lon) : null));
+  pb.frame = frame;
   // Skyhook timeline: [{ t, spot | null }]
   pb.sky = session.events
     .filter((e) => ['skyhook', 'skyhook_active', 'skyhook_clear'].includes(e.type))
@@ -776,7 +779,10 @@ async function openPlayback(id) {
   $('#screens').classList.add('pushed-under');
   $('.dock').classList.add('hidden');
   initSegmented(screen);
-  if (!pb.viz) pb.viz = new Visualizer($('#pb-viz'), { onModeChange: (a) => $('#pb-auto').setAttribute('aria-pressed', String(a)) });
+  if (!pb.viz) {
+    pb.viz = new Visualizer($('#pb-viz'), { onModeChange: (a) => $('#pb-auto').setAttribute('aria-pressed', String(a)) });
+    applyMap();
+  }
   pb.viz.setAuto(true);
   pb.lastFrame = performance.now();
   pb.viz.start(playbackFrame);
@@ -876,7 +882,7 @@ function playbackFrame() {
   $('#pb-t').textContent = fmtDuration(rel);
   $('#pb-clock').textContent = new Date(pb.t).toLocaleTimeString();
 
-  return { vessel, trail: tr, sky, headingUp: settings.get('orientUp') === 'heading' };
+  return { vessel, trail: tr, sky, geo: pb.frame, headingUp: settings.get('orientUp') === 'heading' };
 }
 
 function renderPlayPause() {
@@ -903,6 +909,43 @@ for (const b of $$('#pb-speed button')) {
 
 // ---------------------------------------------------------------- settings screen
 
+// ---------------------------------------------------------------- map background
+
+const MAP_CYCLE = ['off', 'street', 'satellite'];
+const MAP_LABEL = { off: 'Map off', street: 'Street map', satellite: 'Satellite map' };
+
+function isDarkTheme() {
+  const t = settings.get('theme');
+  return t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+function applyMap() {
+  const layer = settings.get('mapLayer');
+  const base = layer === 'off' ? null : layer;
+  const opts = { base, seamarks: !!base && settings.get('seamarks'), dark: isDarkTheme() };
+  viz.setMap(opts);
+  pb.viz?.setMap(opts);
+  const credits = base ? [MAP_SOURCES[base]] : [];
+  if (opts.seamarks) credits.push(SEAMARKS);
+  for (const a of $$('.map-attrib')) {
+    a.hidden = !credits.length;
+    a.textContent = credits.map((c) => c.attribution).join(' · ');
+    a.href = credits[0]?.link || '#';
+  }
+  for (const b of $$('.map-btn')) {
+    b.classList.toggle('on', !!base);
+    b.setAttribute('aria-label', `${MAP_LABEL[layer]} (tap to change)`);
+  }
+}
+
+for (const id of ['#btn-map', '#pb-map']) {
+  $(id).onclick = () => {
+    const next = MAP_CYCLE[(MAP_CYCLE.indexOf(settings.get('mapLayer')) + 1) % MAP_CYCLE.length];
+    settings.set('mapLayer', next);
+    toast(MAP_LABEL[next], { ms: 1500 });
+  };
+}
+
 function applyTheme() {
   const t = settings.get('theme');
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
@@ -912,7 +955,10 @@ function applyTheme() {
   viz.refreshTheme();
   pb.viz?.refreshTheme();
 }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  applyTheme();
+  applyMap();
+});
 
 function renderSettings() {
   for (const el of $$('[data-setting]')) {
@@ -948,6 +994,7 @@ settings.addEventListener('change', (e) => {
   const k = e.detail.key;
   renderSettings();
   if (k === 'theme') applyTheme();
+  if (k === 'theme' || k === 'mapLayer' || k === 'seamarks') applyMap();
   if (k === 'orientUp') renderOrient();
   if (k === 'mount') fusion.resetDeviation(); // different geometry, different deviation
   if (k === 'invertGyro' || k === 'autoDeviation') fusion.hkf.reset();
@@ -1027,6 +1074,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !isNative) 
 // ---------------------------------------------------------------- boot
 
 applyTheme();
+applyMap();
 renderSettings();
 renderOrient();
 renderRecorder();

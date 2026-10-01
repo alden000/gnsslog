@@ -13,6 +13,8 @@ export const DEFAULTS = {
   rateSmoothing: 0.5, // s, time constant of the rate-of-turn low-pass filter
   autoDeviation: true, // learn compass deviation (magnets, steel) from GNSS course
   orientUp: 'north', // north | heading (visualiser)
+  mapLayer: 'off', // off | street | satellite (visualiser background)
+  seamarks: false, // OpenSeaMap overlay on the map
   trailMinutes: 10,
   endpoint: '',
   authHeader: 'Authorization',

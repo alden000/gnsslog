@@ -75,6 +75,10 @@
               <button class="icon-btn pressable wide" id="btn-auto" aria-pressed="true">Auto</button>
             </div>
           </div>
+<button class="icon-btn pressable map-btn" id="btn-map" aria-label="Map background">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5L9 4Z" /><path d="M9 4v13M15 6.5v13" /></svg>
+          </button>
+          <a class="map-attrib" target="_blank" rel="noopener" hidden></a>
           <div class="sky-readout" id="sky-readout" hidden>
             <span class="section-label">Distance to skyhook</span>
             <b class="tnum" id="sky-dist">—</b>
@@ -161,6 +165,21 @@
             <span>Trail length <small>minutes</small></span>
             <input class="field num" type="number" min="1" max="120" step="1" data-setting="trailMinutes" />
           </label>
+        </div>
+
+        <span class="section-label reveal" style="--i: 2">Map</span>
+        <div class="glass card group reveal" style="--i: 2">
+          <div class="row">
+            <span>Background</span>
+            <div class="segmented" data-setting="mapLayer">
+              <button data-v="off">Off</button><button data-v="street">Street</button><button data-v="satellite">Satellite</button>
+            </div>
+          </div>
+          <div class="row">
+            <span>Nautical marks <small>buoys, beacons, lights (OpenSeaMap)</small></span>
+            <button class="switch" role="switch" data-setting="seamarks"><i></i></button>
+          </div>
+          <p class="hint">Map tiles need a data connection. In the web app, tiles you have viewed are kept for offline use.</p>
         </div>
 
         <span class="section-label reveal" style="--i: 2">Heading sensor</span>
@@ -260,6 +279,10 @@
             <button class="icon-btn pressable wide" id="pb-auto" aria-pressed="true">Auto</button>
           </div>
         </div>
+<button class="icon-btn pressable map-btn" id="pb-map" aria-label="Map background">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5V4l-6 2.5L9 4Z" /><path d="M9 4v13M15 6.5v13" /></svg>
+        </button>
+        <a class="map-attrib" target="_blank" rel="noopener" hidden></a>
         <div class="sky-readout" id="pb-sky" hidden>
           <span class="section-label">Distance to skyhook</span>
           <b class="tnum" id="pb-sky-dist">—</b>
