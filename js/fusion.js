@@ -226,6 +226,7 @@ export class Fusion extends EventTarget {
       gnss: g,
       gnssAge: g ? t - g.t : null,
       sky: null,
+      skySpot: this.skyhook ? { lat: this.skyhook.lat, lon: this.skyhook.lon } : null,
     };
     if (hasFix) {
       out.x = p.x;

@@ -135,6 +135,9 @@ and serves `GET /sessions` and `GET /sessions/<id>.csv`. Set `RECEIVER_TOKEN` to
 | `posSigma` | Position filter 1σ (m) |
 | `gnssAcc`, `gnssAge`, `gnssNew` | Last fix accuracy (m), its age (ms), 1 if the fix is new on this row |
 | `gnssT`, `gnssLat`, `gnssLon`, `gnssAlt`, `gnssSpeed`, `gnssCog` | Raw last fix |
+| `skyActive` | 1 while a skyhook spot is set, else 0 |
+| `skyEvent` | On the row where it happened: `mark` (marked or re-marked), `clear`, or `active` (spot already set when the recording started); empty otherwise |
+| `skyLat`, `skyLon` | The active skyhook spot (empty when none) |
 | `skyDist`, `skyBrg` | Distance (m) and bearing (°T) from the vessel to the skyhook spot |
 
 ## Code map

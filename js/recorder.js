@@ -11,10 +11,13 @@ export const SAMPLE_COLUMNS = [
   'lat', 'lon', 'x', 'y', 'vx', 'vy', 'sog', 'cog',
   'hdg', 'hdgMag', 'hdgRate', 'hdgSigma', 'hdgSrc', 'gyroRate', 'gyroBias', 'compass', 'compassDev', 'pitch', 'roll',
   'posSigma', 'gnssAcc', 'gnssAge', 'gnssNew', 'gnssT', 'gnssLat', 'gnssLon', 'gnssAlt', 'gnssSpeed', 'gnssCog',
-  'skyDist', 'skyBrg',
+  'skyActive', 'skyEvent', 'skyLat', 'skyLon', 'skyDist', 'skyBrg',
 ];
 
 const r = (v, d) => (v === null || v === undefined || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d);
+
+/** Short label for the skyEvent column: the row whose seq equals the event's seq gets it. */
+export const SKY_EVENT_LABEL = { skyhook: 'mark', skyhook_clear: 'clear', skyhook_active: 'active' };
 
 export function sampleFromState(s, sid, seq, lastGnssT) {
   const g = s.gnss;
@@ -52,6 +55,10 @@ export function sampleFromState(s, sid, seq, lastGnssT) {
     gnssAlt: g ? r(g.alt, 2) : null,
     gnssSpeed: g ? r(g.speed, 3) : null,
     gnssCog: g ? r(g.cog, 2) : null,
+    skyActive: s.skySpot ? 1 : 0,
+    skyEvent: '',
+    skyLat: s.skySpot ? s.skySpot.lat : null,
+    skyLon: s.skySpot ? s.skySpot.lon : null,
     skyDist: s.sky ? r(s.sky.dist, 3) : null,
     skyBrg: s.sky ? r(s.sky.brg, 2) : null,
   };
@@ -110,6 +117,7 @@ export class Recorder extends EventTarget {
     this.seq = 0;
     this.buffer = [];
     this.lastGnssT = null;
+    this.pendingSky = skyhook ? ['active'] : [];
     this.session = {
       id: uuid(),
       name: name || defaultName(new Date(now)),
@@ -139,6 +147,10 @@ export class Recorder extends EventTarget {
     if (!this.session) return;
     if (!this.session.origin && state.origin) this.session.origin = state.origin;
     const row = sampleFromState(state, this.session.id, this.seq++, this.lastGnssT);
+    if (this.pendingSky?.length) {
+      row.skyEvent = this.pendingSky.join(';');
+      this.pendingSky = [];
+    }
     if (state.gnss) this.lastGnssT = state.gnss.t;
     this.buffer.push(row);
     if (this.buffer.length >= FLUSH_EVERY) this.flush();
@@ -164,6 +176,7 @@ export class Recorder extends EventTarget {
   async logEvent(type, data = {}) {
     if (!this.session) return;
     this.session.events.push({ type, t: Date.now(), seq: this.seq, ...data });
+    if (SKY_EVENT_LABEL[type]) (this.pendingSky ||= []).push(SKY_EVENT_LABEL[type]);
     this.session.metaVersion++;
     await this.flush();
     this._emit('change');

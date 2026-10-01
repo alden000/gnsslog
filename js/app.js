@@ -11,7 +11,7 @@ import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
