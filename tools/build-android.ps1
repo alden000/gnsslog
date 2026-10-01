@@ -60,7 +60,7 @@ if ($release) {
   $bt = Get-ChildItem "$env:ANDROID_HOME\build-tools" -Directory | Sort-Object { [version]($_.Name -replace '[^0-9.]', '') } | Select-Object -Last 1
   $alias = if ($env:GNSSLOG_KEY_ALIAS) { $env:GNSSLOG_KEY_ALIAS } else { 'gnsslog' }
   & "$($bt.FullName)\apksigner.bat" sign `
-    --lineage android\app\signing-lineage.bin --rotation-min-sdk-version 28 `
+    --lineage android\app\signing-lineage.bin --rotation-min-sdk-version 28 --v4-signing-enabled false `
     --ks android\app\gnsslog-debug.keystore --ks-pass pass:android --ks-key-alias androiddebugkey `
     --next-signer --ks $env:GNSSLOG_KEYSTORE --ks-pass env:GNSSLOG_KEYSTORE_PASSWORD --ks-key-alias $alias `
     --out $out android\app\build\outputs\apk\release\app-release-unsigned.apk

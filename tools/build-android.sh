@@ -27,7 +27,7 @@ if [ -n "${GNSSLOG_KEYSTORE:-}" ]; then
   (cd android && ./gradlew assembleRelease)
   bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
   "$bt/apksigner" sign \
-    --lineage android/app/signing-lineage.bin --rotation-min-sdk-version 28 \
+    --lineage android/app/signing-lineage.bin --rotation-min-sdk-version 28 --v4-signing-enabled false \
     --ks android/app/gnsslog-debug.keystore --ks-pass pass:android --ks-key-alias androiddebugkey \
     --next-signer --ks "$GNSSLOG_KEYSTORE" --ks-pass env:GNSSLOG_KEYSTORE_PASSWORD --ks-key-alias "${GNSSLOG_KEY_ALIAS:-gnsslog}" \
     --out "$out" android/app/build/outputs/apk/release/app-release-unsigned.apk

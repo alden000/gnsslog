@@ -15,3 +15,4 @@ android/capacitor-cordova-android-plugins/
 !android/app/gnsslog-debug.keystore
 keystore.properties
 password.txt
+*.idsig
