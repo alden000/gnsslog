@@ -1,6 +1,6 @@
 {
   "name": "gnsslog",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "PWA vessel position/heading logger with skyhook view",
   "type": "module",
@@ -8,7 +8,7 @@
     "start": "node server/dev-server.mjs",
     "receiver": "node server/receiver.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/resume.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/resume.mjs && node tests/e2e/native-mock.mjs && node tests/e2e/offline.mjs",
     "icons": "node tools/render-icons.mjs && node tools/render-android-icons.mjs",
     "android:sync": "node tools/build-www.mjs && cap sync android"
   },

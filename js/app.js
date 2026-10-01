@@ -12,7 +12,7 @@ import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
