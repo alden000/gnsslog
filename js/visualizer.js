@@ -190,7 +190,8 @@ export class Visualizer {
       return;
     }
 
-    const center = sky || vessel;
+    // Centre on the marked location unless the frame asks for the vessel.
+    const center = sky && frame.centerOn !== 'vessel' ? sky : vessel;
     const rot = frame.headingUp && Number.isFinite(vessel.hdg) ? vessel.hdg : 0; // deg, CCW world rotation
 
     // Auto range: keep the interesting things inside ~80% of the radius.

@@ -67,7 +67,7 @@
         <div class="glass strong viz reveal" style="--i: 2">
           <canvas id="viz" aria-label="Top-down vessel plot"></canvas>
           <div class="viz-top">
-            <span class="tag" id="viz-mode">Vessel centred</span>
+            <button class="tag tag-btn pressable" id="viz-mode" disabled aria-label="Centre the plot on the vessel or the marked location"><span>Vessel centred</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3" /></svg></button>
             <div class="viz-ctrls">
               <button class="icon-btn pressable" id="btn-orient" aria-label="Toggle north-up / heading-up">N↑</button>
               <button class="icon-btn pressable" id="btn-zoom-out" aria-label="Zoom out">−</button>
@@ -273,7 +273,7 @@
       <div class="glass strong viz reveal" style="--i: 1">
         <canvas id="pb-viz" aria-label="Playback plot"></canvas>
         <div class="viz-top">
-          <span class="tag" id="pb-mode">Vessel centred</span>
+          <button class="tag tag-btn pressable" id="pb-mode" disabled aria-label="Centre the plot on the vessel or the marked location"><span>Vessel centred</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3M17 17H6l3 3" /></svg></button>
           <div class="viz-ctrls">
             <button class="icon-btn pressable" id="pb-orient" aria-label="Toggle north-up / heading-up">N↑</button>
             <button class="icon-btn pressable wide" id="pb-auto" aria-pressed="true">Auto</button>

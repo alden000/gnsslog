@@ -24,6 +24,7 @@ await new Promise((r) => setTimeout(r, 700));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await chromium.launch();
 const errors = [];
+let mover = null; // moves the simulated position; always cleared in finally
 try {
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -51,12 +52,13 @@ try {
 
   // Vessel moves north-east ~1 m/s, 1 Hz fixes.
   let k = 0;
-  const mover = setInterval(() => {
+  mover = setInterval(() => {
     k++;
     ctx.setGeolocation({ latitude: 1.264 + k * 0.0000064, longitude: 103.84 + k * 0.0000064, accuracy: 3 }).catch(() => {});
   }, 1000);
 
   await page.waitForFunction(() => document.querySelector('#r-pos').textContent.includes('°N'), null, { timeout: 10000 });
+  assert.equal(await page.isDisabled('#viz-mode'), true, 'no mark yet: centring is fixed on the vessel');
   await sleep(1500);
   await page.screenshot({ path: join(out, '1-live.png') });
 
@@ -70,6 +72,14 @@ try {
   await page.screenshot({ path: join(out, '2-mark.png') });
   const skyText = await page.textContent('#sky-dist');
   assert.match(skyText, /m$/, 'mark distance shown');
+  // Centring toggle: enabled once a location is marked, switches between mark and vessel.
+  assert.equal(await page.textContent('#viz-mode'), 'Mark centred');
+  await page.click('#viz-mode');
+  await sleep(1200);
+  assert.equal(await page.textContent('#viz-mode'), 'Vessel centred');
+  await page.screenshot({ path: join(out, '2b-vessel-centred.png') });
+  await page.click('#viz-mode');
+  assert.equal(await page.textContent('#viz-mode'), 'Mark centred');
 
   await page.click('#btn-sky-clear');
   await sleep(1200);
@@ -145,9 +155,10 @@ try {
   assert.deepEqual(errors, [], 'no console errors');
   console.log('E2E OK, screenshots in', out);
 } catch (err) {
-  console.error('E2E FAILED:', err.message, '\nerrors:', errors);
+  console.error('E2E FAILED:', err.message, err.actual !== undefined ? `(actual ${JSON.stringify(err.actual)}, expected ${JSON.stringify(err.expected)})` : '', '\nerrors:', errors);
   process.exitCode = 1;
 } finally {
+  clearInterval(mover);
   await browser.close();
   cleanup();
 }

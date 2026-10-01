@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -212,6 +212,7 @@ viz.start(() => {
     trail: trail.concat([{ x: s.x, y: s.y }]),
     geo: fusion.frame, // lets the visualiser place map tiles
     sky: s.sky,
+    centerOn: liveCenter,
     headingUp: settings.get('orientUp') === 'heading',
   };
 });
@@ -226,6 +227,23 @@ function renderOrient() {
   const seg = $('[data-setting="orientUp"]');
   if (seg) setSegmented(seg, settings.get('orientUp'));
 }
+
+// Plot centring: 'mark' (default when a location is marked) or 'vessel'. Tap the tag to switch.
+let liveCenter = 'mark';
+function renderCenterButton(btn, hasMark, centerOn) {
+  const onMark = hasMark && centerOn !== 'vessel';
+  const text = onMark ? 'Mark centred' : 'Vessel centred';
+  const label = btn.firstElementChild;
+  if (label.textContent !== text) label.textContent = text;
+  btn.disabled = !hasMark;
+  btn.classList.toggle('sky', onMark);
+  btn.title = hasMark ? `Tap to centre on the ${onMark ? 'vessel' : 'marked location'}` : '';
+}
+$('#viz-mode').onclick = () => {
+  liveCenter = liveCenter === 'vessel' ? 'mark' : 'vessel';
+  renderCenterButton($('#viz-mode'), true, liveCenter); // update now, not on the next tick
+  viz.setAuto(true); // re-fit the range for the new centre
+};
 
 function renderLive(s) {
   const unit = settings.get('speedUnit');
@@ -248,9 +266,7 @@ function renderLive(s) {
     $('#sky-dist').textContent = fmtDist(sky.dist);
     $('#sky-sub').textContent = `bearing ${fmtDeg(sky.brg)} · marked ${fmtDuration(Date.now() - sky.t)} ago`;
   }
-  const mode = $('#viz-mode');
-  mode.textContent = sky ? 'Mark centred' : 'Vessel centred';
-  mode.classList.toggle('sky', !!sky);
+  renderCenterButton($('#viz-mode'), !!sky, liveCenter);
 
   // Status chips.
   const st = sensors.status;
@@ -316,6 +332,7 @@ $('#btn-sky').onclick = async () => {
     return;
   }
   navigator.vibrate?.(30);
+  liveCenter = 'mark';
   if (recorder.active) await recorder.markLocation(sky);
   toast(`Location marked${recorder.active ? ' and logged' : ''} · ${fmtLL(sky.lat, sky.lon)}`, { kind: 'ok' });
 };
@@ -767,6 +784,7 @@ async function openPlayback(id) {
   pb.t1 = samples[samples.length - 1].t;
   pb.t = pb.t0;
   pb.playing = false;
+  pb.centerOn = 'mark';
 
   $('#pb-name').textContent = session.name;
   $('#pb-meta').textContent = `${fmtDate(session.startedAt)} · ${samples.length} samples · ${fmtDuration(pb.t1 - pb.t0)}`;
@@ -878,8 +896,7 @@ function playbackFrame() {
     $('#pb-sky-dist').textContent = fmtDist(sky.dist);
     $('#pb-sky-sub').textContent = `bearing ${fmtDeg(sky.brg)}`;
   }
-  $('#pb-mode').textContent = sky ? 'Mark centred' : 'Vessel centred';
-  $('#pb-mode').classList.toggle('sky', !!sky);
+  renderCenterButton($('#pb-mode'), !!sky, pb.centerOn);
   const scrub = $('#pb-scrub');
   const rel = pb.t - pb.t0;
   if (!scrub.matches(':active')) scrub.value = String(rel);
@@ -887,7 +904,7 @@ function playbackFrame() {
   $('#pb-t').textContent = fmtDuration(rel);
   $('#pb-clock').textContent = new Date(pb.t).toLocaleTimeString();
 
-  return { vessel, trail: tr, sky, geo: pb.frame, headingUp: settings.get('orientUp') === 'heading' };
+  return { vessel, trail: tr, sky, geo: pb.frame, centerOn: pb.centerOn, headingUp: settings.get('orientUp') === 'heading' };
 }
 
 function renderPlayPause() {
@@ -895,6 +912,11 @@ function renderPlayPause() {
   $('#pb-play').setAttribute('aria-label', pb.playing ? 'Pause' : 'Play');
 }
 $('#pb-back').onclick = closePlayback;
+$('#pb-mode').onclick = () => {
+  pb.centerOn = pb.centerOn === 'vessel' ? 'mark' : 'vessel';
+  renderCenterButton($('#pb-mode'), true, pb.centerOn);
+  pb.viz.setAuto(true);
+};
 $('#pb-play').onclick = () => {
   if (!pb.playing && pb.t >= pb.t1) pb.t = pb.t0;
   pb.playing = !pb.playing;

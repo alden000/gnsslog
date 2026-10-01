@@ -471,6 +471,24 @@ h2 {
 .tag.sky {
   color: var(--primary);
 }
+/* Centring toggle: a tag that becomes a button once a location is marked. */
+.tag-btn {
+  gap: 6px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tag-btn svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+.tag-btn:disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.tag-btn:disabled svg {
+  display: none;
+}
 
 /* Switch */
 .switch {
