@@ -86,11 +86,16 @@ export class Recorder extends EventTarget {
     this.segment = 0; // increments after every gap (background or app reload)
     this.paused = false;
     this.pausedAt = null;
+    this.keepRunningInBackground = false; // Android app: native services keep data flowing
     this._writing = Promise.resolve();
     // Phones freeze web apps that are not on screen: GNSS and motion updates stop. Rather
     // than logging stale, coasting rows, pause sampling and mark the gap.
     document.addEventListener('visibilitychange', () => {
       if (!this.session) return;
+      if (this.keepRunningInBackground) {
+        if (document.visibilityState === 'hidden') this.flush();
+        return;
+      }
       if (document.visibilityState === 'hidden') this.pause('background');
       else this.resumeFromBackground();
     });

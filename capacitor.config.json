@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.alden000.gnsslog",
+  "appName": "GNSS Log",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#041113"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

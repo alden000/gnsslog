@@ -23,6 +23,33 @@ export function rotationMatrix(alpha, beta, gamma) {
 }
 
 /**
+ * Heading of the mount's forward axis from a full rotation matrix (device → East/North/Up),
+ * e.g. Android's TYPE_ROTATION_VECTOR matrix. Null when the axis is (nearly) vertical.
+ */
+export function headingFromMatrix(R, mount = 'flat') {
+  const f = MOUNT_FORWARD[mount] || MOUNT_FORWARD.flat;
+  const e = R[0][0] * f[0] + R[0][1] * f[1] + R[0][2] * f[2];
+  const n = R[1][0] * f[0] + R[1][1] * f[1] + R[1][2] * f[2];
+  if (Math.hypot(e, n) < 0.25) return null;
+  return wrap360(Math.atan2(e, n) * R2D);
+}
+
+/** W3C beta/gamma (deg) from a rotation matrix, for logging pitch/roll. */
+export function betaGammaFromMatrix(R) {
+  return {
+    beta: Math.asin(Math.max(-1, Math.min(1, R[2][1]))) * R2D,
+    gamma: Math.atan2(-R[2][0], R[2][2]) * R2D,
+  };
+}
+
+/** Heading rate (deg/s, +ve = to starboard) from device-axis gyro rates and world-up in device axes. */
+export function headingRateFromUp(rotationRate, up) {
+  const wx = rotationRate.beta, wy = rotationRate.gamma, wz = rotationRate.alpha;
+  if (![wx, wy, wz].every(Number.isFinite)) return null;
+  return -(wx * up[0] + wy * up[1] + wz * up[2]);
+}
+
+/**
  * Heading (deg clockwise from north) of the mount's forward axis, using an earth-referenced
  * alpha. Returns null when the forward axis points (nearly) straight up or down.
  */

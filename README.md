@@ -80,6 +80,47 @@ Then on the phone:
   of Settings → Heading sensor while turning slowly through 360°.
 - If heading moves the wrong way during turns before catching up, flip **Invert gyro yaw**.
 
+## Android app (Capacitor)
+
+The same app wrapped as an Android APK, for recordings that must keep running with the screen
+off or while other apps are in use (a phone browser freezes web apps in the background).
+
+What changes inside the app:
+- GNSS comes from `@capacitor-community/background-geolocation` (1 Hz, high accuracy). While a
+  recording runs it switches to a **foreground service** with a "GNSS Log is recording"
+  notification, so it keeps going in the background.
+- Compass and gyro come from a small native plugin,
+  `android/app/src/main/java/.../VesselSensorsPlugin.java`: Android's fused rotation-vector
+  attitude matrix and gyroscope, averaged and sent at 25 Hz. It also reports compass calibration
+  ("Calibrate compass" chip), holds a partial wake lock while recording, and paces the 5 Hz logger
+  so it stays on time while the app is hidden.
+- Export uses Android's share sheet; uploads use native HTTP (no CORS needed).
+- The start-recording sheet offers **Allow unrestricted** battery use. Samsung phones kill
+  restricted apps.
+
+### Building the APK
+
+On Windows (e.g. a mini PC) with **Node.js 20+** and **Android Studio** installed (it provides the JDK
+and the Android SDK; open it once so it downloads the SDK):
+
+```powershell
+git clone -b claude/vessel-tracking-pwa-w2jav3 https://github.com/alden000/gnsslog
+cd gnsslog
+powershell -ExecutionPolicy Bypass -File tools\build-android.ps1            # -> GNSS-Log-<version>.apk
+powershell -ExecutionPolicy Bypass -File tools\build-android.ps1 -Install   # also installs over USB (adb)
+```
+
+Linux/macOS: `ANDROID_HOME=… bash tools/build-android.sh`. GitHub Actions also builds the APK on
+every push (`.github/workflows/android.yml`, artifact `gnss-log-apk`).
+
+APKs are signed with a shared debug key (`android/app/gnsslog-debug.keystore`, committed on
+purpose) so a new build installs over the old one **without losing recorded sessions**. Install on
+the phone: copy the APK over, open it, allow "Install unknown apps" for the file manager. On first
+launch allow Location ("While using the app" is enough), Notifications, and in the recording
+sheet tap **Allow unrestricted** for battery.
+
+After changing web code, `npm run android:sync` copies it into the Android project.
+
 ## Upload API (schema `gnsslog/1`)
 
 `POST <endpoint>` with `Content-Type: application/json` and, if configured, your auth header.

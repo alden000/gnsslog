@@ -10,8 +10,9 @@ import { SyncManager } from './sync.js';
 import { Visualizer, fmtDist } from './visualizer.js';
 import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
+import { isNative, plugin } from './native.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -141,6 +142,7 @@ const db = await openDB();
 const sensors = new Sensors();
 const fusion = new Fusion(settings);
 const recorder = new Recorder(db, settings);
+recorder.keepRunningInBackground = isNative;
 const sync = new SyncManager(db, settings);
 // A recording cut off by the phone closing the app can be resumed (asked at start-up below);
 // anything older, or any extra open session, is closed now.
@@ -152,6 +154,10 @@ await recorder.recoverInterrupted(interrupted?.session.id);
 sensors.addEventListener('gnss', (e) => fusion.onGnss(e.detail));
 sensors.addEventListener('orientation', (e) => fusion.onOrientation(e.detail));
 sensors.addEventListener('motion', (e) => fusion.onMotion(e.detail));
+sensors.addEventListener('nativeMotion', (e) => {
+  fusion.onNativeMotion(e.detail);
+  maybeTick(); // native 25 Hz heartbeat keeps the 5 Hz logger on time even if timers are throttled
+});
 
 let origin = null;
 fusion.addEventListener('frame', (e) => {
@@ -169,7 +175,12 @@ function trailCap() {
 }
 
 let nextTick = Math.ceil(Date.now() / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
+let tickTimer = 0;
+function maybeTick() {
+  if (Date.now() >= nextTick - 10) tick();
+}
 function tick() {
+  clearTimeout(tickTimer);
   const now = Date.now();
   const s = fusion.state(now);
   s.origin = origin;
@@ -180,14 +191,14 @@ function tick() {
     if (trail.length > cap) trail.splice(0, trail.length - cap);
   }
   recorder.add(s);
-  renderLive(s);
+  if (document.visibilityState === 'visible') renderLive(s);
   // Drift-free schedule on the 200 ms grid; skip missed slots after a stall.
   nextTick += SAMPLE_INTERVAL;
   const t = Date.now();
   if (nextTick < t) nextTick = Math.ceil(t / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
-  setTimeout(tick, nextTick - t);
+  tickTimer = setTimeout(tick, nextTick - t);
 }
-setTimeout(tick, nextTick - Date.now());
+tickTimer = setTimeout(tick, nextTick - Date.now());
 
 // ---------------------------------------------------------------- live screen
 
@@ -252,7 +263,8 @@ function renderLive(s) {
 
   const chipH = $('#chip-hdg');
   const gyro = st.motion === 'ok';
-  if (s.hdgSrc === 'compass') setChip(chipH, 'ok', gyro ? 'Compass+Gyro' : 'Compass');
+  if (s.hdgSrc === 'compass' && fusion.magAccuracy !== null && fusion.magAccuracy <= 1) setChip(chipH, 'warn', 'Calibrate compass');
+  else if (s.hdgSrc === 'compass') setChip(chipH, 'ok', gyro ? 'Compass+Gyro' : 'Compass');
   else if (s.hdgSrc === 'cog') setChip(chipH, 'warn', 'COG');
   else if (st.orientation === 'waiting') setChip(chipH, 'busy', 'Compass…');
   else if (st.orientation === 'denied') setChip(chipH, 'err', 'Compass denied');
@@ -276,6 +288,7 @@ function renderRecorder() {
   }
 }
 recorder.addEventListener('change', () => {
+  sensors.setBackground(recorder.active); // Android app: foreground service + wake lock while recording
   renderRecorder();
   if (currentTab === 'sessions') renderSessions();
 });
@@ -347,13 +360,24 @@ $('#btn-rec').onclick = () => {
          <input class="field" id="new-name" type="text" maxlength="120" value="${esc(defaultName())}" /></label>
        <label class="col"><span class="section-label">Notes</span>
          <textarea class="field" id="new-notes" maxlength="2000" placeholder="Conditions, sea state, setup…"></textarea></label>
-       <p class="hint">Keep GNSS Log on screen while recording: phones pause web apps in the background. To use other apps, open it in split screen or pop-up view.</p>
+       ${isNative
+         ? '<p class="hint">Recording continues with the screen off or while you use other apps. A notification shows while it runs.</p>'
+         : '<p class="hint">Keep GNSS Log on screen while recording: phones pause web apps in the background. To use other apps, open it in split screen or pop-up view.</p>'}
+       <div id="battery-hint"></div>
        ${!fusion.gnss ? '<p class="hint">No GNSS fix yet — recording will start now and fill in once a fix arrives.</p>' : ''}
        <button class="btn-aurora pressable" id="new-start"><span>Start recording</span></button>
      </div>`,
     (sheet, close) => {
       const name = $('#new-name', sheet);
       name.select();
+      if (isNative) {
+        plugin('VesselSensors').batteryStatus().then(({ unrestricted }) => {
+          if (unrestricted) return;
+          $('#battery-hint', sheet).innerHTML =
+            '<p class="hint">Battery optimisation can stop long recordings. <button class="btn-glass pressable small" id="btn-batt">Allow unrestricted</button></p>';
+          $('#btn-batt', sheet).onclick = () => plugin('VesselSensors').requestUnrestrictedBattery();
+        });
+      }
       $('#new-start', sheet).onclick = async () => {
         if (!sensors.running) await enableSensors();
         await recorder.start({
@@ -373,6 +397,10 @@ $('#btn-rec').onclick = () => {
 // ---------------------------------------------------------------- sensors / permissions
 
 async function enableSensors() {
+  if (isNative && sensors.status.gnss === 'denied') {
+    sensors.openSettings();
+    return;
+  }
   try {
     await sensors.start();
   } catch (err) {
@@ -391,7 +419,9 @@ function renderPerm() {
   const span = $('#perm-card .perm-text span');
   if (st.gnss === 'denied') {
     strong.textContent = 'Location access denied';
-    span.textContent = 'Allow location for this site in your browser settings, then reload.';
+    span.textContent = isNative
+      ? 'Tap Enable to open app settings, allow Location (and Notifications), then return.'
+      : 'Allow location for this site in your browser settings, then reload.';
   } else if (st.orientation === 'denied') {
     strong.textContent = 'Motion access denied';
     span.textContent = 'Heading needs motion & orientation access. Tap Enable to ask again.';
@@ -410,6 +440,13 @@ sensors.addEventListener('status', renderPerm);
     const p = await navigator.permissions?.query({ name: 'geolocation' });
     geoGranted = p?.state === 'granted';
   } catch {}
+  if (isNative) {
+    // Android app: the location permission prompt is native; no tap needed for sensors.
+    await sensors.start();
+    renderPerm();
+    if (interrupted) showResume(interrupted);
+    return;
+  }
   if (geoGranted) sensors.startGnss();
   if (!sensors.needsMotionPermission) sensors.startMotion();
   renderPerm();
@@ -962,7 +999,7 @@ $('#app-version').textContent = `GNSS Log ${VERSION} · logging at 5 Hz`;
 
 // ---------------------------------------------------------------- service worker
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !isNative) {
   navigator.serviceWorker.register('sw.js').then((reg) => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;

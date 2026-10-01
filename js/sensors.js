@@ -1,5 +1,10 @@
 // Raw sensor access: GNSS (Geolocation API), orientation (magnetometer-referenced attitude)
 // and motion (gyroscope). Emits 'gnss', 'orientation', 'motion' and 'status' events.
+// In the Android app, GNSS comes from a background-capable location service and attitude/gyro
+// from the native VesselSensors plugin ('nativeMotion' events), so logging survives the app
+// being in the background.
+
+import { isNative, plugin } from './native.js';
 
 const isIOS =
   /iP(hone|ad|od)/.test(navigator.userAgent) ||
@@ -24,6 +29,7 @@ export class Sensors extends EventTarget {
 
   /** iOS 13+ only grants motion/orientation from inside a user gesture. */
   get needsMotionPermission() {
+    if (isNative) return false;
     return (
       typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function'
@@ -41,19 +47,108 @@ export class Sensors extends EventTarget {
   startGnss() {
     if (this.watchId !== null) return;
     this.running = true;
-    this._startGnss();
+    if (isNative) {
+      this.watchId = 'pending';
+      this._startNativeGnss();
+    } else this._startGnss();
   }
 
   async startMotion() {
     if (this.motionStarted) return;
     this.motionStarted = true;
     this.running = true;
-    await this._startMotion();
+    if (isNative) await this._startNativeMotion();
+    else await this._startMotion();
+  }
+
+  /**
+   * Android app: keep GNSS + sensors running with the screen off / app in the background
+   * (foreground service with a notification, partial wake lock). Used while recording.
+   */
+  async setBackground(enabled) {
+    if (!isNative || !!this.background === enabled) return;
+    this.background = enabled;
+    await plugin('VesselSensors').setBackground({ enabled }).catch(() => {});
+    if (this.watchId !== null && this.watchId !== 'pending') this._restartNativeGnss();
+    // A pending watcher re-checks the mode once it is registered.
+  }
+
+  async _restartNativeGnss() {
+    const id = this.watchId;
+    this.watchId = 'pending';
+    await plugin('BackgroundGeolocation').removeWatcher({ id }).catch(() => {});
+    this._startNativeGnss();
+  }
+
+  async _startNativeMotion() {
+    const vs = plugin('VesselSensors');
+    this._setStatus({ orientation: 'waiting', motion: 'waiting' });
+    await vs.addListener('motion', (e) => {
+      if (e.R && this.status.orientation !== 'ok') this._setStatus({ orientation: 'ok' });
+      if (e.gyro && this.status.motion !== 'ok') this._setStatus({ motion: 'ok' });
+      if (e.R) this.lastOrientationT = e.t;
+      if (e.gyro) this.lastMotionT = e.t;
+      this._emit('nativeMotion', e);
+    });
+    const has = await vs.start();
+    if (!has.rotation) this._setStatus({ orientation: 'unsupported' });
+    if (!has.gyro) this._setStatus({ motion: 'unsupported' });
+  }
+
+  _startNativeGnss(attempt = 0) {
+    const bg = plugin('BackgroundGeolocation');
+    const background = !!this.background;
+    this._setStatus({ gnss: 'waiting' });
+    const opts = { requestPermissions: true, stale: false, distanceFilter: 0 };
+    if (background) {
+      opts.backgroundTitle = 'GNSS Log is recording';
+      opts.backgroundMessage = 'Logging position and heading. Open the app to stop.';
+    }
+    bg.addWatcher(opts, (loc, err) => {
+      if (err) {
+        if (err.code === 'NOT_AUTHORIZED') this._setStatus({ gnss: 'denied', gnssError: err.message });
+        else this._setStatus({ gnss: 'error', gnssError: err.message });
+        return;
+      }
+      if (this.status.gnss !== 'ok') this._setStatus({ gnss: 'ok', gnssError: '' });
+      this._emit('gnss', {
+        t: Date.now(),
+        fixT: loc.time,
+        lat: loc.latitude,
+        lon: loc.longitude,
+        acc: loc.accuracy,
+        alt: loc.altitude,
+        altAcc: loc.altitudeAccuracy,
+        speed: Number.isFinite(loc.speed) ? loc.speed : null,
+        cog: Number.isFinite(loc.bearing) && loc.speed > 0 ? loc.bearing : null,
+      });
+    }).then(
+      (id) => {
+        this.watchId = id;
+        if (!!this.background !== background) this._restartNativeGnss(); // mode changed meanwhile
+      },
+      (err) => {
+        // The location service binds asynchronously at app start; retry briefly.
+        if (attempt < 10) setTimeout(() => this._startNativeGnss(attempt + 1), 500);
+        else {
+          this.watchId = null;
+          this._setStatus({ gnss: 'error', gnssError: String(err?.message || err) });
+        }
+      },
+    );
+  }
+
+  /** Android app: open the app's system settings (e.g. after location was denied). */
+  openSettings() {
+    if (isNative) plugin('BackgroundGeolocation').openSettings();
   }
 
   stop() {
     this.running = false;
-    if (this.watchId !== null) navigator.geolocation.clearWatch(this.watchId);
+    if (isNative) {
+      if (this.watchId && this.watchId !== 'pending') plugin('BackgroundGeolocation').removeWatcher({ id: this.watchId }).catch(() => {});
+      plugin('VesselSensors').stop().catch(() => {});
+    } else if (this.watchId !== null) navigator.geolocation.clearWatch(this.watchId);
     this.watchId = null;
     window.removeEventListener('deviceorientationabsolute', this._onOrientation);
     window.removeEventListener('deviceorientation', this._onOrientation);

@@ -7,7 +7,7 @@
 
 import { LocalFrame, haversine, bearingXY, wrap360, wrap180 } from './geo.js';
 import { HeadingKF, PositionKF } from './filters.js';
-import { headingFromOrientation, headingRateFromGyro } from './attitude.js';
+import { headingFromOrientation, headingFromMatrix, betaGammaFromMatrix, headingRateFromUp, upInDevice } from './attitude.js';
 import { DeviationEstimator } from './deviation.js';
 
 const COMPASS_MIN_INTERVAL = 100; // ms: ~10 Hz compass corrections (samples are correlated)
@@ -34,6 +34,7 @@ export class Fusion extends EventTarget {
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
     this.skyhook = null; // { lat, lon, x, y, t, acc }
+    this.magAccuracy = null; // Android: magnetometer calibration 0 (unreliable) .. 3 (high)
     this.dev = new DeviationEstimator();
     this.magSum = { s: 0, c: 0, n: 0 }; // circular mean of raw compass since the last fix
     this.prevCog = null;
@@ -101,7 +102,7 @@ export class Fusion extends EventTarget {
 
   onOrientation(o) {
     if (!Number.isFinite(o.beta) || !Number.isFinite(o.gamma)) return;
-    this.att = { alpha: o.alpha, beta: o.beta, gamma: o.gamma, t: o.t };
+    this.att = { alpha: o.alpha, beta: o.beta, gamma: o.gamma, t: o.t, up: upInDevice(o.beta, o.gamma) };
 
     let alphaAbs = null;
     if (o.compass !== null && Number.isFinite(o.alpha)) {
@@ -118,26 +119,45 @@ export class Fusion extends EventTarget {
     }
     if (alphaAbs === null) return;
 
-    const mag = headingFromOrientation(alphaAbs, o.beta, o.gamma, this.settings.get('mount'));
+    this._compass(o.t, headingFromOrientation(alphaAbs, o.beta, o.gamma, this.settings.get('mount')), o.compassAcc);
+  }
+
+  /**
+   * Android app: attitude matrix + gyro from the native VesselSensors plugin (keeps working in
+   * the background). R is device → East/North/Up, gyro is deg/s in device axes.
+   */
+  onNativeMotion(e) {
+    if (e.R) {
+      const R = [e.R.slice(0, 3), e.R.slice(3, 6), e.R.slice(6, 9)];
+      const { beta, gamma } = betaGammaFromMatrix(R);
+      this.att = { alpha: null, beta, gamma, t: e.t, up: R[2] };
+      this.magAccuracy = e.magAccuracy ?? null;
+      this._compass(e.t, headingFromMatrix(R, this.settings.get('mount')), e.headingAcc);
+    }
+    if (e.gyro) this.onMotion({ t: e.t, rot: { alpha: e.gyro[2], beta: e.gyro[0], gamma: e.gyro[1] } });
+  }
+
+  /** One magnetometer heading (magnetic, deg) of the mount; accDeg = sensor's own accuracy estimate. */
+  _compass(t, mag, accDeg) {
     if (mag === null) return;
     this.magHeadingRaw = mag;
     this.magSum.s += Math.sin((mag * Math.PI) / 180);
     this.magSum.c += Math.cos((mag * Math.PI) / 180);
     this.magSum.n++;
-    if (o.t - this.compassT < COMPASS_MIN_INTERVAL) return;
-    this.compassT = o.t;
+    if (t - this.compassT < COMPASS_MIN_INTERVAL) return;
+    this.compassT = t;
 
     const dev = this.settings.get('autoDeviation') ? this.dev.correction(mag) : 0;
     const trueHdg = wrap360(mag + dev + this.settings.get('declination') + this.settings.get('headingOffset'));
-    const sd = o.compassAcc > 0 ? Math.max(this.settings.get('compassSigma'), o.compassAcc) : this.settings.get('compassSigma');
-    this._propagate(o.t);
+    const sd = accDeg > 0 ? Math.max(this.settings.get('compassSigma'), accDeg) : this.settings.get('compassSigma');
+    this._propagate(t);
     this.hkf.update(trueHdg, sd * sd);
     this.headingSource = 'compass';
   }
 
   onMotion(m) {
     if (!this.att) return; // need beta/gamma to project the rates onto the vertical
-    let rate = headingRateFromGyro(m.rot, this.att.beta, this.att.gamma);
+    let rate = headingRateFromUp(m.rot, this.att.up);
     if (rate === null) return;
     if (this.settings.get('invertGyro')) rate = -rate;
     const dt = this.gyroT ? (m.t - this.gyroT) / 1000 : 0;

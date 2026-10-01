@@ -2,6 +2,7 @@
 
 import { SAMPLE_COLUMNS, SKY_EVENT_LABEL } from './recorder.js';
 import { publicMeta } from './sync.js';
+import { isNative, shareTextFile } from './native.js';
 
 function csvCell(v) {
   if (v === null || v === undefined) return '';
@@ -55,6 +56,7 @@ function safeName(name) {
 
 /** Share (mobile) or download (desktop) a text file. */
 export async function deliverFile(text, filename, type) {
+  if (isNative) return shareTextFile(text, filename);
   const file = new File([text], filename, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
