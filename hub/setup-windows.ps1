@@ -17,6 +17,7 @@
     6. checks http://127.0.0.1:<port>/api/health
 
   From a git checkout:  .\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken ...
+  An existing cloudflared service for another tunnel is never replaced unless -ReplaceTunnel is given.
   Remove the service (data is kept):  .\setup-windows.ps1 -Uninstall
 #>
 #Requires -RunAsAdministrator
@@ -31,6 +32,7 @@ param(
   [string]$BackupDir = "",
   [string]$AccessTeam = "",
   [string]$AccessAud = "",
+  [switch]$ReplaceTunnel,
   [switch]$Uninstall
 )
 
@@ -133,6 +135,7 @@ if (Test-Path $cfgPath) {
 }
 # Cloudflare Access (team + application audience) can be set or changed on any run.
 $changed = $false
+if ($PSBoundParameters.ContainsKey("Port") -and $cfg.port -ne $Port) { $cfg.port = $Port; $changed = $true }
 foreach ($pair in @(@("accessTeam", $AccessTeam), @("accessAud", $AccessAud), @("backupDir", $BackupDir))) {
   if ($pair[1]) { $cfg | Add-Member -NotePropertyName $pair[0] -NotePropertyValue $pair[1] -Force; $changed = $true }
 }
@@ -145,6 +148,14 @@ icacls $data /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F
 
 # ---------------------------------------------------------------- 4. service (scheduled task)
 Step "Background service"
+# The hub was stopped above; anything still listening on the port is another program.
+Start-Sleep -Seconds 1
+$busy = Get-NetTCPConnection -LocalPort $cfg.port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($busy) {
+  $proc = Get-Process -Id $busy.OwningProcess -ErrorAction SilentlyContinue
+  throw ("Port $($cfg.port) is already used by '$($proc.ProcessName)' (PID $($busy.OwningProcess), $($proc.Path)). " +
+    "Run again with -Port <free port> and point the tunnel's public hostname (logs.wwweeeiii.com) at http://localhost:<that port>.")
+}
 $nodeArgs = "--disable-warning=ExperimentalWarning `"$app\hub\server.mjs`" --config `"$cfgPath`""
 $action = New-ScheduledTaskAction -Execute $node -Argument $nodeArgs -WorkingDirectory $app
 $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -175,17 +186,27 @@ if (-not $cf) {
   $cf = Get-Command cloudflared -ErrorAction SilentlyContinue
 }
 $cfExe = if ($cf) { $cf.Source } else { "${env:ProgramFiles(x86)}\cloudflared\cloudflared.exe" }
+$svc = Get-Service cloudflared -ErrorAction SilentlyContinue
 if ($TunnelToken) {
-  if (Get-Service cloudflared -ErrorAction SilentlyContinue) {
-    & $cfExe service uninstall | Out-Null
-    Start-Sleep -Seconds 2
+  $current = if ($svc) { (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\cloudflared" -ErrorAction SilentlyContinue).ImagePath } else { $null }
+  if ($svc -and $current -and $current.Contains($TunnelToken)) {
+    Write-Host "The cloudflared service already runs this tunnel; leaving it as it is." -ForegroundColor Green
+  } elseif ($svc -and -not $ReplaceTunnel) {
+    Write-Warning ("A cloudflared service for a DIFFERENT tunnel is already installed. It was left alone, because other sites may depend on it. " +
+      "Either add the public hostname logs.wwweeeiii.com -> http://localhost:$($cfg.port) to that existing tunnel in the Cloudflare dashboard " +
+      "(no -TunnelToken needed), or run again with -ReplaceTunnel to switch this PC to the new tunnel.")
+  } else {
+    if ($svc) {
+      & $cfExe service uninstall | Out-Null
+      Start-Sleep -Seconds 2
+    }
+    & $cfExe service install $TunnelToken
+    Write-Host "Tunnel service installed." -ForegroundColor Green
   }
-  & $cfExe service install $TunnelToken
-  Write-Host "Tunnel service installed." -ForegroundColor Green
-} elseif (Get-Service cloudflared -ErrorAction SilentlyContinue) {
-  Write-Host "Tunnel service already installed (pass -TunnelToken to replace it)."
+} elseif ($svc) {
+  Write-Host "A cloudflared service is already installed and was left as it is. Make sure its tunnel routes logs.wwweeeiii.com to http://localhost:$($cfg.port)."
 } else {
-  Write-Warning "No -TunnelToken given: the hub is only reachable on this PC. See hub\README.md, step 2."
+  Write-Warning "No -TunnelToken given: the hub is only reachable on this PC. See hub\README.md, step 1."
 }
 
 # ---------------------------------------------------------------- summary

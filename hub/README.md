@@ -70,7 +70,13 @@ restart if it stops. At the end it prints the phone settings. Run the same comma
 .\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken "…" -AccessTeam "…" -AccessAud "…"
 ```
 
-Options: `-InstallDir`, `-AppDir`, `-DataDir`, `-Port`, `-BackupDir`,
+**Already running a Cloudflare tunnel on this PC for something else?** Add the public hostname
+`logs.wwweeeiii.com` → `http://localhost:8787` to *that* tunnel and run the installer without
+`-TunnelToken`. The installer never replaces another tunnel's service unless you pass
+`-ReplaceTunnel`. If port 8787 is taken it stops and names the program; use `-Port <n>` and point
+the public hostname at that port.
+
+Options: `-InstallDir`, `-AppDir`, `-DataDir`, `-Port`, `-BackupDir`, `-ReplaceTunnel`,
 `-AccessTeam` / `-AccessAud` (can be changed on any run), `-Uninstall`.
 
 ### 4. Point the phone app at the hub
