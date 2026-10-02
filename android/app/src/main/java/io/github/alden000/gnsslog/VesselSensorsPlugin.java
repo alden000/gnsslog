@@ -17,8 +17,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.PowerManager;
-import android.view.HapticFeedbackConstants;
-import android.view.View;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -225,37 +226,75 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     }
 
     /**
-     * Tactile feedback through the system's touch feedback (follows the phone's "touch
-     * interactions" vibration setting). kind: tap | select | confirm | heavy | warn.
+     * Tactile feedback on taps, driven through the vibration motor directly (predefined click
+     * effects where the phone has them, a short pulse otherwise). It does not depend on the
+     * system "touch interactions" vibration switch, which silences View haptics on many phones.
+     * kind: tap | select | confirm | heavy | warn. Resolves { ok }.
      */
     @PluginMethod
     public void haptic(PluginCall call) {
         String kind = call.getString("kind", "tap");
-        int c;
+        JSObject ret = new JSObject();
+        try {
+            Vibrator v = vibrator();
+            if (v == null || !v.hasVibrator()) {
+                ret.put("ok", false);
+                call.resolve(ret);
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= 29) {
+                int effect;
+                switch (kind) {
+                    case "select":
+                        effect = VibrationEffect.EFFECT_TICK;
+                        break;
+                    case "confirm":
+                    case "heavy":
+                        effect = VibrationEffect.EFFECT_HEAVY_CLICK;
+                        break;
+                    case "warn":
+                        effect = VibrationEffect.EFFECT_DOUBLE_CLICK;
+                        break;
+                    default:
+                        effect = VibrationEffect.EFFECT_CLICK;
+                }
+                boolean supported = Build.VERSION.SDK_INT < 30 || v.areAllEffectsSupported(effect) != Vibrator.VIBRATION_EFFECT_SUPPORT_NO;
+                if (supported) v.vibrate(VibrationEffect.createPredefined(effect));
+                else v.vibrate(pulse(kind));
+            } else if (Build.VERSION.SDK_INT >= 26) {
+                v.vibrate(pulse(kind));
+            } else {
+                v.vibrate("warn".equals(kind) ? 40 : 15);
+            }
+            ret.put("ok", true);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+        }
+        call.resolve(ret);
+    }
+
+    private Vibrator vibrator() {
+        Context c = getContext();
+        if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = (VibratorManager) c.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+            return vm != null ? vm.getDefaultVibrator() : null;
+        }
+        return (Vibrator) c.getSystemService(Context.VIBRATOR_SERVICE);
+    }
+
+    private static VibrationEffect pulse(String kind) {
         switch (kind) {
             case "select":
-                c = HapticFeedbackConstants.CLOCK_TICK;
-                break;
+                return VibrationEffect.createOneShot(8, 120);
             case "confirm":
-                c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
-                break;
             case "heavy":
-                c = HapticFeedbackConstants.LONG_PRESS;
-                break;
+                return VibrationEffect.createOneShot(30, 255);
             case "warn":
-                c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS;
-                break;
+                return VibrationEffect.createWaveform(new long[] { 0, 25, 70, 25 }, new int[] { 0, 255, 0, 255 }, -1);
             default:
-                c = HapticFeedbackConstants.VIRTUAL_KEY;
+                return VibrationEffect.createOneShot(14, 200);
         }
-        final int constant = c;
-        if (getActivity() != null && getBridge() != null) {
-            getActivity().runOnUiThread(() -> {
-                View v = getBridge().getWebView();
-                if (v != null) v.performHapticFeedback(constant);
-            });
-        }
-        call.resolve();
     }
 
     /** Location permission level: { fine, background } ("background" = "Allow all the time"). */

@@ -1,6 +1,6 @@
-// Tactile feedback for taps. In the Android app it uses the system's own touch feedback
-// (VesselSensors.haptic -> View.performHapticFeedback, follows the phone's "touch
-// interactions" vibration setting); in browsers that support it, a short vibration.
+// Tactile feedback for taps. In the Android app it drives the vibration motor through
+// VesselSensors.haptic (predefined click effects); in browsers that support it, a short
+// vibration (navigator.vibrate).
 //
 // Kinds: tap (buttons), select (switches, segmented choices, tabs), confirm (start recording,
 // mark location), heavy (stop recording), warn (destructive confirmations, errors).
