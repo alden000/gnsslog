@@ -5,6 +5,7 @@ const KEY = 'gnsslog.settings';
 export const DEFAULTS = {
   v: 2, // settings schema version
   theme: 'system', // system | light | dark
+  haptics: true, // vibrate briefly on taps
   speedUnit: 'kn', // kn | ms | kmh
   mount: 'auto', // auto | flat | upright
   headingOffset: 0, // deg added to the phone heading to get the bow heading

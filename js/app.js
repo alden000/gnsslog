@@ -12,8 +12,9 @@ import { exportSession } from './export.js';
 import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
+import { haptic, installHaptics } from './haptics.js';
 
-const VERSION = '0.8.3';
+const VERSION = '0.8.4';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -48,6 +49,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // ---------------------------------------------------------------- UI primitives
 
 function toast(msg, { kind = '', action, onAction, ms = 3200 } = {}) {
+  if (kind === 'err') haptic('warn');
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
   el.innerHTML = `${kind ? '<i class="dot"></i>' : ''}<span>${esc(msg)}</span>`;
@@ -139,6 +141,7 @@ function setChip(el, cls, text) {
 // ---------------------------------------------------------------- core objects
 
 const settings = new Settings();
+installHaptics(settings);
 const db = await openDB();
 const sensors = new Sensors();
 const fusion = new Fusion(settings);
@@ -372,7 +375,7 @@ function confirmSheet({ title, text, confirm, onConfirm }) {
      <p class="sub">${esc(text)}</p>
      <div class="stack"><div class="btn-pair">
        <button class="btn-glass pressable" data-act="cancel">Cancel</button>
-       <button class="btn-aurora pressable" data-act="ok">${esc(confirm)}</button>
+       <button class="btn-aurora pressable" data-act="ok" data-haptic="warn">${esc(confirm)}</button>
      </div></div>`,
     (sheet, close) => {
       $('[data-act="cancel"]', sheet).onclick = () => close();
@@ -489,7 +492,6 @@ $('#btn-sky').onclick = async () => {
     toast('No position yet — wait for a GNSS fix', { kind: 'warn' });
     return;
   }
-  navigator.vibrate?.(30);
   liveCenter = 'mark';
   if (recorder.active) await recorder.markLocation(sky);
   toast(`Location marked${recorder.active ? ' and logged' : ''} · ${fmtLL(sky.lat, sky.lon)}`, { kind: 'ok' });
@@ -516,7 +518,7 @@ $('#btn-rec').onclick = () => {
        <p class="sub">${esc(recorder.session.name)} · ${fmtDuration(Date.now() - recorder.session.startedAt)} · ${recorder.seq} samples</p>
        <div class="stack"><div class="btn-pair">
          <button class="btn-glass pressable" data-act="cancel">Keep going</button>
-         <button class="btn-aurora pressable" data-act="stop">Stop</button>
+         <button class="btn-aurora pressable" data-act="stop" data-haptic="heavy">Stop</button>
        </div></div>`,
       (sheet, close) => {
         $('[data-act="cancel"]', sheet).onclick = () => close();
@@ -543,7 +545,7 @@ $('#btn-rec').onclick = () => {
        <div id="location-hint"></div>
        <div id="battery-hint"></div>
        ${!fusion.gnss ? '<p class="hint">No GNSS fix yet — recording will start now and fill in once a fix arrives.</p>' : ''}
-       <button class="btn-aurora pressable" id="new-start"><span>Start recording</span></button>
+       <button class="btn-aurora pressable" id="new-start" data-haptic="confirm"><span>Start recording</span></button>
      </div>`,
     (sheet, close) => {
       const name = $('#new-name', sheet);
@@ -575,7 +577,6 @@ $('#btn-rec').onclick = () => {
           mark: fusion.mark && Number.isFinite(fusion.mark.x) ? fusion.mark : null,
         });
         close();
-        navigator.vibrate?.(30);
         toast('Recording', { kind: 'ok' });
       };
     },

@@ -85,6 +85,7 @@ try {
         batteryStatus() { return Promise.resolve({ unrestricted: false }); },
         locationStatus() { return Promise.resolve({ fine: true, background: false }); },
         openAppSettings() { log.calls.push(['appSettings']); return Promise.resolve(); },
+        haptic({ kind }) { log.calls.push(['haptic', kind]); return Promise.resolve(); },
         requestUnrestrictedBattery() { log.calls.push(['battery']); return Promise.resolve(); },
       },
       Filesystem: { writeFile({ path, data }) { log.shared.push({ path, size: data.length, head: data.slice(0, 40) }); return Promise.resolve({ uri: 'file:///cache/' + path }); } },
@@ -198,6 +199,7 @@ try {
   assert.ok(c.includes('addWatcher:true'), 'location watcher switched to background mode');
   assert.ok(c.includes('battery'));
   assert.ok(c.includes('appSettings'), 'prompted for "Allow all the time"');
+  for (const k of ['tap', 'confirm', 'heavy']) assert.ok(c.includes(`haptic:${k}`), `haptic ${k} on taps`);
 
   // Export goes through Filesystem + Share.
   await page.click('.dock-tab[data-tab="sessions"]');

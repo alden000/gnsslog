@@ -40,6 +40,10 @@ try {
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   // Web fonts are optional (system fallbacks); keep the test hermetic.
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+  await page.addInitScript(() => {
+    window.__vibes = [];
+    navigator.vibrate = (p) => (window.__vibes.push(p), true);
+  });
   await page.goto('http://localhost:8091/');
 
   // Simulated compass (heading 045°, flat phone) + small gyro yaw at 20 Hz.
@@ -173,6 +177,8 @@ try {
   await sleep(2500);
   await page.screenshot({ path: join(out, '5-playback.png') });
 
+  const vibes = await page.evaluate(() => window.__vibes);
+  assert.ok(vibes.length >= 5 && vibes.includes(14) && vibes.includes(28), `haptics on taps: ${JSON.stringify(vibes)}`);
   assert.deepEqual(errors, [], 'no console errors');
   console.log('E2E OK, screenshots in', out);
 } catch (err) {

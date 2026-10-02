@@ -17,6 +17,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.PowerManager;
+import android.view.HapticFeedbackConstants;
+import android.view.View;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -220,6 +222,40 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         } catch (Exception e) {
             call.reject("drain failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * Tactile feedback through the system's touch feedback (follows the phone's "touch
+     * interactions" vibration setting). kind: tap | select | confirm | heavy | warn.
+     */
+    @PluginMethod
+    public void haptic(PluginCall call) {
+        String kind = call.getString("kind", "tap");
+        int c;
+        switch (kind) {
+            case "select":
+                c = HapticFeedbackConstants.CLOCK_TICK;
+                break;
+            case "confirm":
+                c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.CONFIRM : HapticFeedbackConstants.VIRTUAL_KEY;
+                break;
+            case "heavy":
+                c = HapticFeedbackConstants.LONG_PRESS;
+                break;
+            case "warn":
+                c = Build.VERSION.SDK_INT >= 30 ? HapticFeedbackConstants.REJECT : HapticFeedbackConstants.LONG_PRESS;
+                break;
+            default:
+                c = HapticFeedbackConstants.VIRTUAL_KEY;
+        }
+        final int constant = c;
+        if (getActivity() != null && getBridge() != null) {
+            getActivity().runOnUiThread(() -> {
+                View v = getBridge().getWebView();
+                if (v != null) v.performHapticFeedback(constant);
+            });
+        }
+        call.resolve();
     }
 
     /** Location permission level: { fine, background } ("background" = "Allow all the time"). */

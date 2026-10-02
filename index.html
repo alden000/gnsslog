@@ -99,7 +99,7 @@
         </div>
 
         <div class="actions reveal" style="--i: 4">
-          <button class="btn-glass pressable" id="btn-sky">
+          <button class="btn-glass pressable" id="btn-sky" data-haptic="confirm">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v5M12 17v5M2 12h5M17 12h5" /></svg>
             <span id="btn-sky-label">Mark Location</span>
           </button>
@@ -150,6 +150,10 @@
             <div class="segmented" data-setting="theme">
               <button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
             </div>
+          </div>
+          <div class="row">
+            <span>Haptic feedback <small>vibrate briefly on taps</small></span>
+            <button class="switch" role="switch" data-setting="haptics"><i></i></button>
           </div>
           <div class="row">
             <span>Speed unit</span>
