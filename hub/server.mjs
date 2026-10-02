@@ -16,8 +16,8 @@
 // Security model: uploads need the ingest token. Everything else (analyser + API) sits behind
 // Cloudflare Access: a request that arrives through Cloudflare must carry an Access token
 // (Cf-Access-Jwt-Assertion) whose signature, audience, issuer and expiry check out against the
-// team's public keys. Anything else is refused, so a hostname without Access (the ingest one)
-// only ever reaches /ingest. Requests that do not come through Cloudflare (this PC) are allowed.
+// team's public keys. Anything else is refused, so the /ingest bypass (or any route without
+// Access) only ever reaches /ingest. Requests that do not come through Cloudflare (this PC) are allowed.
 //
 // Routes
 //   POST /ingest                         phone uploads (schema gnsslog/1)

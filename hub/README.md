@@ -5,14 +5,15 @@ SQLite and serves the **Analyzer**: a web app (installable PWA) to replay, analy
 export them.
 
 ```
-phone app ──HTTPS POST /ingest──▶ Cloudflare ──tunnel──▶ mini PC: hub (Node.js + SQLite)
-browser ────https://logs…──────▶ Cloudflare Access (email login) ──tunnel──▶ Analyzer + API
+phone app ──POST https://logs.wwweeeiii.com/ingest──▶ Cloudflare (no login, token) ──┐
+                                                                                     ├─tunnel─▶ mini PC: hub
+browser ────https://logs.wwweeeiii.com────────────▶ Cloudflare Access (email login) ─┘          (Node.js + SQLite)
 ```
 
 - **No open ports.** `cloudflared` connects out from the mini PC; Cloudflare handles HTTPS.
 - **Private.** The Analyzer sits behind Cloudflare Access (free for up to 50 users). The hub
-  verifies the Access login itself and refuses any request through Cloudflare without one, so a
-  hostname you forgot to protect fails closed. Uploads need the ingest token.
+  verifies the Access login itself and refuses any request through Cloudflare without one (except
+  `/ingest`), so a missing or too-broad Access rule fails closed. Uploads need the ingest token.
 - **Nothing is lost when the PC is off.** The phone keeps every sample and uploads when the hub
   is reachable again. While recording it uploads every 3 s, so the Analyzer can follow live.
 - **No dependencies.** Node.js 22.13+ only (built-in `node:sqlite`); no `npm install`.
@@ -24,22 +25,21 @@ browser ────https://logs…──────▶ Cloudflare Access (emai
 1. **Zero Trust** → **Networks** → **Tunnels** → **Create a tunnel** → *Cloudflared* → name it
    e.g. `minipc`.
 2. On the "Install connector" page, copy the **token** (the long string after
-   `cloudflared service install`). The setup script uses it in step 2.
-3. Add two **public hostnames**, both with service `HTTP` → `localhost:8787`:
+   `cloudflared service install`). The installer uses it in step 3.
+3. Add one **public hostname**: `logs.wwweeeiii.com`, service `HTTP` → `localhost:8787`.
+   Cloudflare creates the DNS record itself.
 
-   | Hostname | For |
-   |---|---|
-   | `logs.wwweeeiii.com` | the Analyzer (you, in a browser) |
-   | `ingest.wwweeeiii.com` | phone uploads |
+### 2. Protect the Analyzer with Cloudflare Access (and let uploads through)
 
-   Cloudflare creates the DNS records itself.
+**Zero Trust** → **Access** → **Applications** → **Add an application** → *Self-hosted*, twice:
 
-### 2. Protect the Analyzer with Cloudflare Access
+| Application | Domain | Path | Policy |
+|---|---|---|---|
+| GNSS Log Analyzer | `logs.wwweeeiii.com` | *(empty)* | *Allow* → Include → *Emails* → your address (and anyone you share with) |
+| GNSS Log uploads | `logs.wwweeeiii.com` | `ingest` | *Bypass* → Include → *Everyone* |
 
-**Zero Trust** → **Access** → **Applications** → **Add an application** → *Self-hosted*:
-
-- Application domain: `logs.wwweeeiii.com`
-- Policy: *Allow* → Include → *Emails* → your address (and anyone you want to share with).
+The phone cannot do the browser login, so the more specific `/ingest` application lets uploads
+skip it; they are protected by the ingest token instead.
 
 Note two values for the installer:
 
@@ -47,11 +47,9 @@ Note two values for the installer:
   `<team>.cloudflareaccess.com` (the `<team>` part).
 - **AUD tag**: the application's **Overview** → *Application Audience (AUD) Tag*.
 
-The hub checks the signature of every Access login against your team's keys and this AUD, so
-nobody can get in by faking headers through another hostname.
-
-Do **not** add an Access application for `ingest.wwweeeiii.com`: the phone cannot log in. It is
-protected by the token; without a valid Access login the hub only answers `/ingest`.
+(Use the AUD of the *Analyzer* application, not the uploads one.) The hub checks the signature of
+every Access login against your team's keys and this AUD, so nobody gets in by faking headers,
+and if the bypass were ever set too broadly the hub would still only answer `/ingest`.
 
 ### 3. Run the installer on the mini PC
 
@@ -81,7 +79,7 @@ GNSS Log → **Settings → Cloud upload**:
 
 | Field | Value |
 |---|---|
-| Endpoint URL | `https://ingest.wwweeeiii.com/ingest` |
+| Endpoint URL | `https://logs.wwweeeiii.com/ingest` |
 | Auth header | `Authorization` |
 | Value | `Bearer <token printed by the installer>` |
 
@@ -169,7 +167,7 @@ Config keys / environment variables: `port`/`HUB_PORT` (8787), `host`/`HUB_HOST`
 | Symptom | Check |
 |---|---|
 | Phone shows upload errors `401` | Value must be `Bearer ` + the token (with the space). |
-| Phone shows `403` | `ingest.…` has an Access application on it; remove it. |
+| Phone shows `403` or a login page error | The *Bypass* application for path `ingest` on `logs.wwweeeiii.com` is missing. |
 | Browser shows "Cloudflare Access is not configured on the hub" | Re-run the installer with `-AccessTeam` and `-AccessAud` (step 2). |
 | Browser shows "Log in through Cloudflare Access" | The Access application for `logs.…` is missing, or its AUD differs from the one given to the installer. |
 | `502` / `1033` from Cloudflare | Hub or tunnel not running: Task Scheduler → *GNSS Log Hub*; `Get-Service cloudflared`; `C:\GNSSLog\data\hub.log`. |

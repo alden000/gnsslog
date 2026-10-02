@@ -196,7 +196,7 @@ Write-Host "   Analyzer (this PC):  http://127.0.0.1:$($cfg.port)/"
 Write-Host "   Data + logs:         $data"
 Write-Host ""
 Write-Host " Phone app -> Settings -> Cloud upload"
-Write-Host "   Endpoint URL:  https://<your ingest hostname>/ingest"
+Write-Host "   Endpoint URL:  https://logs.wwweeeiii.com/ingest"
 Write-Host "   Auth header:   Authorization"
 Write-Host "   Value:         Bearer $($cfg.ingestToken)"
 Write-Host "--------------------------------------------------------------------" -ForegroundColor Cyan
