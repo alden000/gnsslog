@@ -14,7 +14,7 @@ import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 
-const VERSION = '0.8.7';
+const VERSION = '0.8.8';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1194,13 +1194,30 @@ function applyMap() {
   if (opts.seamarks) credits.push(SEAMARKS);
   for (const a of $$('.map-attrib')) {
     a.hidden = !credits.length;
-    a.textContent = credits.map((c) => c.attribution).join(' · ');
-    a.href = credits[0]?.link || '#';
+    $('.attrib-text', a).innerHTML = credits
+      .map((c) => `<a href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.attribution)}</a>`)
+      .join(' · ');
   }
   for (const b of $$('.map-btn')) {
     b.classList.toggle('on', !!base);
     b.setAttribute('aria-label', `${MAP_LABEL[layer]} (tap to change)`);
   }
+}
+
+// Map credits: tap (i) to show them; they fold away again after a few seconds.
+for (const box of $$('.map-attrib')) {
+  const btn = $('.attrib-btn', box);
+  let timer = 0;
+  const set = (open) => {
+    box.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', String(open));
+    clearTimeout(timer);
+    if (open) timer = setTimeout(() => set(false), 6000);
+  };
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    set(!box.classList.contains('open'));
+  };
 }
 
 for (const id of ['#btn-map', '#pb-map']) {
