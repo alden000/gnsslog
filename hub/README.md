@@ -65,7 +65,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 It installs Node.js LTS and `cloudflared` (via winget), puts the app in `C:\GNSSLog\app` and the
 data in `C:\GNSSLog\data`, creates an ingest token, and registers the hub to start at boot and
 restart if it stops. At the end it prints the phone settings. Run the same command again later to
-**update** (data and token are kept). Options: `-InstallDir`, `-Port`, `-BackupDir`,
+**update** (data and token are kept). To run from a git checkout instead (updated with `git pull` on each run, data next to it in
+`D:\GIT\gnsslog-data`):
+
+```powershell
+.\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken "…" -AccessTeam "…" -AccessAud "…"
+```
+
+Options: `-InstallDir`, `-AppDir`, `-DataDir`, `-Port`, `-BackupDir`,
 `-AccessTeam` / `-AccessAud` (can be changed on any run), `-Uninstall`.
 
 ### 4. Point the phone app at the hub

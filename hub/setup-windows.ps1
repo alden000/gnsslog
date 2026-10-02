@@ -8,17 +8,22 @@
   Run it again at any time to update to the latest code; settings, the ingest token and all
   data are kept. What it does:
     1. installs Node.js LTS (winget) if Node 22.13+ is missing
-    2. downloads the app from GitHub into  <InstallDir>\app   (data lives in <InstallDir>\data)
-    3. creates <InstallDir>\data\hub-config.json with a random ingest token (first run only)
+    2. gets the code: with -AppDir, a git checkout there (cloned, or updated with git pull);
+       otherwise a download from GitHub into <InstallDir>\app
+    3. creates <data>\hub-config.json with a random ingest token (first run only). Data lives in
+       -DataDir, default <AppDir>-data (e.g. D:\GIT\gnsslog-data) or <InstallDir>\data
     4. registers the "GNSS Log Hub" scheduled task: starts at boot as SYSTEM, restarts on failure
     5. installs cloudflared and, with -TunnelToken, runs the tunnel as a Windows service
     6. checks http://127.0.0.1:<port>/api/health
 
+  From a git checkout:  .\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken ...
   Remove the service (data is kept):  .\setup-windows.ps1 -Uninstall
 #>
 #Requires -RunAsAdministrator
 param(
   [string]$InstallDir = "C:\GNSSLog",
+  [string]$AppDir = "",
+  [string]$DataDir = "",
   [int]$Port = 8787,
   [string]$Repo = "alden000/gnsslog",
   [string]$Branch = "claude/vessel-tracking-pwa-w2jav3",
@@ -42,7 +47,7 @@ function Node-Version {
 }
 
 if ($Uninstall) {
-  Step "Removing the scheduled task (data in $InstallDir\data is kept)"
+  Step "Removing the scheduled task (code and data are kept)"
   Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
   Write-Host "Done. To remove the tunnel service as well: cloudflared service uninstall"
@@ -64,24 +69,51 @@ $node = (Get-Command node).Source
 Write-Host "Node $v at $node"
 
 # ---------------------------------------------------------------- 2. code
-$app = Join-Path $InstallDir "app"
-$data = Join-Path $InstallDir "data"
-New-Item -ItemType Directory -Force -Path $InstallDir, $data | Out-Null
-
-Step "Downloading $Repo ($Branch)"
-$zip = Join-Path $env:TEMP "gnsslog-hub.zip"
-$tmp = Join-Path $env:TEMP ("gnsslog-hub-" + [guid]::NewGuid())
-Invoke-WebRequest -Uri "https://codeload.github.com/$Repo/zip/refs/heads/$Branch" -OutFile $zip -UseBasicParsing
-Expand-Archive -Path $zip -DestinationPath $tmp
-$src = Get-ChildItem $tmp | Select-Object -First 1
-if (-not (Test-Path (Join-Path $src.FullName "hub\server.mjs"))) { throw "The download does not contain hub\server.mjs (wrong branch?)" }
-
+if ($AppDir) {
+  $app = $AppDir.TrimEnd('\')
+  $data = if ($DataDir) { $DataDir } else { "$app-data" }
+} else {
+  $app = Join-Path $InstallDir "app"
+  $data = if ($DataDir) { $DataDir } else { Join-Path $InstallDir "data" }
+}
+New-Item -ItemType Directory -Force -Path $data | Out-Null
 Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
-if (Test-Path $app) { Remove-Item $app -Recurse -Force }
-Move-Item $src.FullName $app
-Remove-Item $tmp, $zip -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "Installed to $app"
+
+if ($AppDir) {
+  Step "Git checkout $app ($Branch)"
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is not installed (winget install Git.Git), or run without -AppDir to download a copy instead." }
+  if (Test-Path (Join-Path $app ".git")) {
+    $dirty = git -C $app status --porcelain --untracked-files=no
+    if ($dirty) {
+      Write-Warning "Local changes in $app; not updating it (commit or stash them, then run again)."
+    } else {
+      git -C $app fetch origin $Branch
+      git -C $app checkout $Branch
+      git -C $app pull --ff-only origin $Branch
+    }
+  } elseif (Test-Path $app) {
+    if (-not (Test-Path (Join-Path $app "hub\server.mjs"))) { throw "$app exists but is neither a git checkout nor a copy of GNSS Log." }
+    Write-Host "Using the files already in $app (not a git checkout, not updated)."
+  } else {
+    New-Item -ItemType Directory -Force -Path (Split-Path $app) | Out-Null
+    git clone --branch $Branch "https://github.com/$Repo.git" $app
+  }
+  if (-not (Test-Path (Join-Path $app "hub\server.mjs"))) { throw "hub\server.mjs is missing in $app (wrong branch?)" }
+} else {
+  Step "Downloading $Repo ($Branch)"
+  New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+  $zip = Join-Path $env:TEMP "gnsslog-hub.zip"
+  $tmp = Join-Path $env:TEMP ("gnsslog-hub-" + [guid]::NewGuid())
+  Invoke-WebRequest -Uri "https://codeload.github.com/$Repo/zip/refs/heads/$Branch" -OutFile $zip -UseBasicParsing
+  Expand-Archive -Path $zip -DestinationPath $tmp
+  $src = Get-ChildItem $tmp | Select-Object -First 1
+  if (-not (Test-Path (Join-Path $src.FullName "hub\server.mjs"))) { throw "The download does not contain hub\server.mjs (wrong branch?)" }
+  Start-Sleep -Seconds 2
+  if (Test-Path $app) { Remove-Item $app -Recurse -Force }
+  Move-Item $src.FullName $app
+  Remove-Item $tmp, $zip -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host "Code: $app   Data: $data"
 
 # ---------------------------------------------------------------- 3. config
 Step "Configuration"
