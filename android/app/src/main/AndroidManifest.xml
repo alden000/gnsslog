@@ -40,6 +40,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Keep logging while the screen is off during a recording (partial wake lock). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- "Allow all the time": GNSS keeps flowing with the screen off. With "only while using the
+         app" some phones stop location updates a minute or two after the screen turns off. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- Lets the app ask to be exempt from battery optimisation (sideloaded field tool). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Location + foreground-service permissions come from the background-geolocation plugin. -->

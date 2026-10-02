@@ -83,6 +83,8 @@ try {
           return Promise.resolve({ frames: sent, fixes, more, oldestT: log.frames[0]?.[0] ?? -1 });
         },
         batteryStatus() { return Promise.resolve({ unrestricted: false }); },
+        locationStatus() { return Promise.resolve({ fine: true, background: false }); },
+        openAppSettings() { log.calls.push(['appSettings']); return Promise.resolve(); },
         requestUnrestrictedBattery() { log.calls.push(['battery']); return Promise.resolve(); },
       },
       Filesystem: { writeFile({ path, data }) { log.shared.push({ path, size: data.length, head: data.slice(0, 40) }); return Promise.resolve({ uri: 'file:///cache/' + path }); } },
@@ -114,6 +116,8 @@ try {
   await page.click('#btn-rec');
   await page.waitForSelector('#btn-batt');
   await page.click('#btn-batt');
+  await page.waitForSelector('#btn-loc');
+  await page.click('#btn-loc');
   await page.click('#new-start');
   await sleep(1500);
   // App goes to background: keep logging (no pause) even though setTimeout is throttled.
@@ -140,7 +144,8 @@ try {
   };
   const dropWin = await freeze('drop', 3000); // events lost: caught up from the native log
   const burstWin = await freeze('burst', 3000); // events delivered late, in one go
-  const deadWin = await freeze('dead', 2500); // whole app frozen: nothing to recover
+  const deadWin = await freeze('dead', 4000); // whole app frozen: nothing to recover
+  await freeze('dead', 1500); // a short hiccup is bridged by the filters, not marked as a gap
   await page.click('#btn-rec');
   await page.click('[data-act="stop"]');
   await sleep(600);
@@ -171,12 +176,14 @@ try {
     };
   }, win);
   console.log({ ...info, drop: info.drop.length, calls: info.calls.length });
-  assert.deepEqual(info.events, ['start', 'catchup', 'late', 'gap', 'stop'], 'no pause; catch-up, late burst and gap are logged');
+  assert.deepEqual(info.events.slice(0, 4), ['start', 'catchup', 'late', 'gap'], 'no pause; catch-up, late burst and gap are logged');
+  assert.equal(info.events.filter((x) => x === 'gap').length, 1, 'short hiccup bridged');
+  assert.equal(info.events.at(-1), 'stop');
   assert.ok(info.catchup.frozenMs > 2500 && info.catchup.holes === 0 && info.catchup.fixes >= 2 && info.catchup.samples >= 12, `catchup event ${JSON.stringify(info.catchup)}`);
   assert.ok(info.late.spanMs > 1000 && info.late.maxLagMs > 1500, `late event ${JSON.stringify(info.late)}`);
   assert.equal(info.big.length, 1, `only the whole-app freeze leaves a hole: ${JSON.stringify(info.big)}`);
-  assert.ok(Math.abs(info.big[0][1] - 2500) < 700, `hole matches the freeze: ${info.big[0][1]} ms`);
-  assert.ok(Math.abs(info.gap.gapMs - 2500) < 700, `gap event ${info.gap.gapMs} ms`);
+  assert.ok(Math.abs(info.big[0][1] - 4000) < 700, `hole matches the freeze: ${info.big[0][1]} ms`);
+  assert.ok(Math.abs(info.gap.gapMs - 4000) < 700, `gap event ${info.gap.gapMs} ms`);
   assert.ok(info.drop.length >= 10, `samples recovered for the dropped freeze: ${info.drop.length}`);
   assert.ok(info.drop.filter(([n]) => n === 1).length >= 1, 'GNSS fixes recovered for the dropped freeze');
   assert.ok(info.drop.at(-1)[1] > info.drop[0][1], 'position advances through the recovered stretch');
@@ -190,6 +197,7 @@ try {
   assert.ok(c.includes('setBackground:true') && c.includes('setBackground:false'), 'background mode on while recording');
   assert.ok(c.includes('addWatcher:true'), 'location watcher switched to background mode');
   assert.ok(c.includes('battery'));
+  assert.ok(c.includes('appSettings'), 'prompted for "Allow all the time"');
 
   // Export goes through Filesystem + Share.
   await page.click('.dock-tab[data-tab="sessions"]');

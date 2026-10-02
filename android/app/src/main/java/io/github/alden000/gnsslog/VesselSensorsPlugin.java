@@ -1,7 +1,9 @@
 package io.github.alden000.gnsslog;
 
 import android.content.Context;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.provider.Settings;
 import android.hardware.Sensor;
@@ -218,6 +220,28 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         } catch (Exception e) {
             call.reject("drain failed: " + e.getMessage());
         }
+    }
+
+    /** Location permission level: { fine, background } ("background" = "Allow all the time"). */
+    @PluginMethod
+    public void locationStatus(PluginCall call) {
+        Context c = getContext();
+        boolean fine = c.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean bg = Build.VERSION.SDK_INT < 29 || c.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        JSObject ret = new JSObject();
+        ret.put("fine", fine);
+        ret.put("background", fine && bg);
+        call.resolve(ret);
+    }
+
+    /** The app's system settings page (Permissions -> Location -> Allow all the time). */
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        i.setData(Uri.parse("package:" + getContext().getPackageName()));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
     }
 
     /** Whether Android exempts the app from battery optimisation (Samsung: "Unrestricted"). */

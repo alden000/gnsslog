@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.8.2';
+const VERSION = '0.8.3';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -207,7 +207,8 @@ tickTimer = setTimeout(tick, nextTick - Date.now());
 // JavaScript happens to run. Android may freeze the WebView with the screen off while the native
 // services keep running; the first heartbeat after such a freeze shows a jump, and the missing
 // stretch is fetched from the plugin's native log and replayed at its original timestamps.
-const NATIVE_GAP_MS = 1000;
+const NATIVE_GAP_MS = 1000; // a heartbeat jump this long triggers a catch-up from the native log
+const NATIVE_HOLE_MS = 3000; // shorter stretches without data are bridged by the filters
 let nativeClock = false; // heartbeat seen: the data clock drives sampling
 let feedT = 0; // newest motion frame time fed to the filters
 let lastFixT = -Infinity; // newest GNSS fix time fed to the filters
@@ -222,8 +223,9 @@ function nativeData(kind, e) {
   }
   if (kind === 'gnss') {
     if (Number.isFinite(e.fixT) && !(e.fixT > lastFixT)) return; // already replayed / duplicate
-    // A fix delivered late (WebView was frozen) is placed at its own time, not at arrival.
-    if (Number.isFinite(e.fixT) && e.t - e.fixT > 5000) e = { ...e, t: e.fixT };
+    // A fix delivered late (the WebView was frozen) is placed near its own time, not at arrival.
+    // Normally arrival is ~0.2 s after the fix time, so this only changes late deliveries.
+    if (Number.isFinite(e.fixT) && e.t > e.fixT + 1000) e = { ...e, t: e.fixT + 1000 };
     fusion.onGnss(e);
     if (Number.isFinite(e.fixT)) lastFixT = e.fixT;
     return;
@@ -294,7 +296,7 @@ async function catchUp(fromT, toT) {
     for (const [kind, ev] of evs) {
       if (kind === 'motion') {
         if (ev.t <= feedT) continue;
-        if (ev.t - lastT > NATIVE_GAP_MS) hole(lastT, ev.t);
+        if (ev.t - lastT > NATIVE_HOLE_MS) hole(lastT, ev.t);
         feedMotion(ev);
         lastT = ev.t;
         replayed++;
@@ -307,10 +309,8 @@ async function catchUp(fromT, toT) {
   } catch (err) {
     console.warn('Native catch-up failed', err);
   }
-  if (toT - lastT > NATIVE_GAP_MS) {
-    hole(lastT, toT);
-    feedT = toT - 1;
-  }
+  if (toT - lastT > NATIVE_HOLE_MS) hole(lastT, toT);
+  feedT = Math.max(feedT, toT - 1); // the event that triggered this now continues normally
   if (replayed && recorder.active) {
     // Diagnostic: the WebView missed this stretch and it was recovered from the native log.
     recorder.note('catchup', fromT, {
@@ -540,6 +540,7 @@ $('#btn-rec').onclick = () => {
        ${isNative
          ? '<p class="hint">Recording continues with the screen off or while you use other apps. A notification shows while it runs.</p>'
          : '<p class="hint">Keep GNSS Log on screen while recording: phones pause web apps in the background. To use other apps, open it in split screen or pop-up view.</p>'}
+       <div id="location-hint"></div>
        <div id="battery-hint"></div>
        ${!fusion.gnss ? '<p class="hint">No GNSS fix yet — recording will start now and fill in once a fix arrives.</p>' : ''}
        <button class="btn-aurora pressable" id="new-start"><span>Start recording</span></button>
@@ -548,6 +549,16 @@ $('#btn-rec').onclick = () => {
       const name = $('#new-name', sheet);
       name.select();
       if (isNative) {
+        plugin('VesselSensors')
+          .locationStatus()
+          .then(({ fine, background }) => {
+            if (!fine || background) return;
+            $('#location-hint', sheet).innerHTML =
+              '<p class="hint">Location is allowed only while the app is open, so GNSS can stop a minute after the screen turns off. ' +
+              'In Settings choose <b>Permissions → Location → Allow all the time</b>. <button class="btn-glass pressable small" id="btn-loc">Open settings</button></p>';
+            $('#btn-loc', sheet).onclick = () => plugin('VesselSensors').openAppSettings();
+          })
+          .catch(() => {});
         plugin('VesselSensors').batteryStatus().then(({ unrestricted }) => {
           if (unrestricted) return;
           $('#battery-hint', sheet).innerHTML =
