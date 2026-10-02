@@ -48,6 +48,9 @@ charts, statistics, trimming, data extraction to CSV/JSON/GPX/GeoJSON/KML, image
 SVG/JPG/PNG). It runs on any PC with Node.js 22.13+ and is published safely through Cloudflare
 Tunnel + Access. Setup for a Windows mini PC: [hub/README.md](hub/README.md).
 
+To write your own receiver instead, the upload interface is specified in
+[docs/ICD.md](docs/ICD.md) (schema `gnsslog/1`).
+
 ## Running it
 
 Sensors only work in a **secure context** (HTTPS, or `http://localhost`).

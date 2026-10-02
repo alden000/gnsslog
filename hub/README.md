@@ -137,6 +137,8 @@ browser menu if you like.
 
 ## API
 
+The upload format (`/ingest`) is specified in [../docs/ICD.md](../docs/ICD.md).
+
 All under `https://logs…` (needs the Access login) except `/ingest`.
 
 | Method | Path | |

@@ -199,3 +199,20 @@ test('stats and formats are pure', () => {
   assert.equal(decimate(t.map((x) => ({ t: x })), 1500).length, 3);
   assert.match(serialize('gpx', { meta: { name: 'a<b' }, rows: [] }), /a&lt;b/);
 });
+
+test('the ICD example (docs/ICD.md 8.1) is accepted by the reference hub', async () => {
+  const { readFileSync } = await import('node:fs');
+  const md = readFileSync(new URL('../docs/ICD.md', import.meta.url), 'utf8');
+  const example = JSON.parse(/### 8\.1[\s\S]*?```json\n([\s\S]*?)```/.exec(md)[1]);
+  const r = await post('/ingest', example);
+  assert.equal(r.status, 200);
+  const body = await r.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.received, example.samples.length);
+  const s = await (await fetch(`${base}/api/sessions/${example.session.id}`)).json();
+  assert.equal(s.name, example.session.name);
+  assert.equal(s.marks, 1);
+  // a repeat of the same chunk is harmless
+  assert.equal((await post('/ingest', example)).status, 200);
+  assert.equal((await (await fetch(`${base}/api/sessions/${example.session.id}`)).json()).sampleCount, 1);
+});
