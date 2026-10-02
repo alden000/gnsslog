@@ -31,7 +31,9 @@ try {
       if (log.freeze === 'burst') log.queued.push(fn);
       else fn();
     };
-    log.unfreeze = () => {
+    log.unfreeze = ({ fixFirst = false } = {}) => {
+      // fixFirst: a fresh GNSS fix reaches JavaScript before the first heartbeat after the freeze
+      if (fixFirst && log.emitFix) log.emitFix();
       log.freeze = null;
       log.queued.splice(0).forEach((fn) => fn());
     };
@@ -39,10 +41,18 @@ try {
       BackgroundGeolocation: {
         addWatcher(opts, cb) {
           log.calls.push(['addWatcher', !!opts.backgroundMessage]);
+          // The app runs one watcher at a time (the callback id it gets back is not this id).
+          for (const w of Object.keys(log.watchers)) {
+            clearInterval(log.watchers[w]);
+            delete log.watchers[w];
+          }
           let k = 0;
           const id = String(nextId);
+          const t0 = (log.fixT0 ??= Date.now());
+          const fix = () => ({ latitude: 1.3 + ((Date.now() - t0) / 1000) * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false });
+          log.emitFix = () => cb(fix());
           log.watchers[id] = setInterval(() => {
-            const loc = { latitude: 1.3 + ++k * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false };
+            const loc = fix();
             if (background && log.freeze !== 'dead') log.fixes.push([Date.now(), loc.time, loc.latitude, loc.longitude, 3, 5, 3, 1.1, 0]);
             deliver(() => cb(loc));
           }, 1000);
@@ -80,7 +90,7 @@ try {
           const sent = frames.slice(0, max);
           const fixUntil = more ? sent.at(-1)[0] : untilT;
           const fixes = log.fixes.filter((f) => f[0] > sinceT && f[0] <= fixUntil);
-          return Promise.resolve({ frames: sent, fixes, more, oldestT: log.frames[0]?.[0] ?? -1 });
+          return Promise.resolve({ frames: sent, fixes, more, oldestT: log.frames[0]?.[0] ?? -1, gnss: { on: true, provider: 'fused', logged: log.fixes.length, lastFixAgoMs: 500 } });
         },
         batteryStatus() { return Promise.resolve({ unrestricted: false }); },
         locationStatus() { return Promise.resolve({ fine: true, background: false }); },
@@ -139,7 +149,7 @@ try {
   const freeze = async (mode, ms) => {
     const t0 = await page.evaluate((m) => ((window.__native.freeze = m), Date.now()), mode);
     await sleep(ms);
-    const t1 = await page.evaluate(() => (window.__native.unfreeze(), Date.now()));
+    const t1 = await page.evaluate((fixFirst) => (window.__native.unfreeze({ fixFirst }), Date.now()), mode === 'drop');
     await sleep(1500);
     return [t0, t1];
   };
@@ -171,7 +181,7 @@ try {
       segs: [...new Set(rows.map((r) => r.segment))],
       calls: window.__native.calls,
       acks: window.__native.acks,
-      drop: inWin(win.drop).map((r) => [r.gnssNew, r.lat]),
+      drop: inWin(win.drop).map((r) => [r.gnssNew, r.lat, r.gnssAge]),
       burst: inWin(win.burst).length,
       dead: inWin(win.dead).length,
     };
@@ -188,6 +198,11 @@ try {
   assert.ok(info.drop.length >= 10, `samples recovered for the dropped freeze: ${info.drop.length}`);
   assert.ok(info.drop.filter(([n]) => n === 1).length >= 1, 'GNSS fixes recovered for the dropped freeze');
   assert.ok(info.drop.at(-1)[1] > info.drop[0][1], 'position advances through the recovered stretch');
+  // The fresh fix that arrived first after the freeze must not be applied before the replay.
+  const lats = info.drop.map((d) => d[1]);
+  assert.ok(lats.every((v, i) => i === 0 || v >= lats[i - 1] - 1e-7), 'no jump back: fixes applied in time order');
+  assert.ok(lats.at(-1) - lats[0] < 0.00004, `no teleport to the post-freeze position (${(lats.at(-1) - lats[0]).toFixed(6)})`);
+  assert.ok(info.drop.every((d) => d[2] === null || d[2] > -1100), `no fix from the future: ${Math.min(...info.drop.map((d) => d[2]))} ms`);
   assert.ok(info.burst >= 5, `samples placed at their own time for the late burst: ${info.burst}`);
   assert.equal(info.dead, 0, 'no coasting samples invented for the whole-app freeze');
   assert.ok(Math.abs(info.hdg - 45) < 2, `heading ${info.hdg}`);

@@ -115,7 +115,7 @@ identifier. A breaking change gets a new identifier (`gnsslog/2`).
 | `origin` | object \| null | `{ lat, lon }` (degrees): origin of the local `x`/`y` frame used by the samples. |
 | `events` | array | All session events so far, in order (section 5.4). |
 | `metaVersion` | number | Increases whenever any metadata changes (events, name, notes, status). Section 6.2. |
-| `device` | object | `{ ua, name }`: browser/WebView user agent and the user-set device name (may be `null`). |
+| `device` | object | `{ ua, name, perm? }`: browser/WebView user agent, the user-set device name (may be `null`) and, in the Android app, `perm: { location: "always" \| "while-using" \| "denied", battery: "unrestricted" \| "optimised" }`. |
 | `config` | object | Snapshot of the app settings at recording start (declination, mounting, filter tuning, …), auth value removed. Informative; keys may change between app versions. |
 | `app` | object | `{ version }`, e.g. `"0.8.4"`. |
 
@@ -190,7 +190,7 @@ reference hub turns every new field into a database column automatically.
 | `mark_active` | same as `mark` | A previously marked location still applies (new session, resumed session, trimmed copy). |
 | `mark_clear` | – | Marked location cleared. |
 | `gap` | `gapMs`, `segment` | Android app: no data at all for this stretch (the whole app was frozen). |
-| `catchup` | `frozenMs`, `frames`, `fixes`, `samples`, `holes` | Android app: data missed by a frozen WebView was recovered from the native log (diagnostic). |
+| `catchup` | `frozenMs`, `frames`, `fixes`, `samples`, `holes`, `gnssOn?`, `gnssProvider?`, `gnssLogged?`, `gnssLastFixAgoMs?` | Android app: data missed by a frozen WebView was recovered from the native log, with the state of the native GNSS listener (diagnostic). |
 | `late` | `spanMs`, `maxLagMs`, `frames` | Android app: data arrived late in a burst and was placed at its real time (diagnostic). |
 
 Unknown event types MUST be ignored or stored as they are.

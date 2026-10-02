@@ -86,6 +86,9 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     private static final int XF = 9;
     private LocationManager locationManager;
     private boolean gnssOn = false;
+    private String gnssProvider = null;
+    private String gnssError = null;
+    private long lastFixWall = 0;
     private volatile long lastAck = 0;
 
     private final Runnable bufferer = new Runnable() {
@@ -217,6 +220,14 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
             }
             ret.put("frames", frames);
             ret.put("fixes", fixes);
+            // Diagnostics: is the native GNSS listener running, and when did it last get a fix?
+            JSObject g = new JSObject();
+            g.put("on", gnssOn);
+            g.put("provider", gnssProvider);
+            g.put("error", gnssError);
+            g.put("logged", xCount);
+            g.put("lastFixAgoMs", lastFixWall > 0 ? System.currentTimeMillis() - lastFixWall : -1);
+            ret.put("gnss", g);
             ret.put("more", more);
             ret.put("oldestT", oldest);
             call.resolve(ret);
@@ -519,6 +530,7 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
 
     private void bufferFix(Location l) {
         if (!background || xData == null) return;
+        lastFixWall = System.currentTimeMillis();
         synchronized (lock) {
             int o = xHead * XF;
             xData[o] = System.currentTimeMillis();
@@ -544,8 +556,11 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         try {
             locationManager.requestLocationUpdates(provider, 1000L, 0f, locationListener, handler.getLooper());
             gnssOn = true;
+            gnssProvider = provider;
+            gnssError = null;
         } catch (SecurityException | IllegalArgumentException e) {
             gnssOn = false; // no permission yet: frames are still logged
+            gnssError = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
     }
 

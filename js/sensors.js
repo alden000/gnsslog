@@ -150,8 +150,10 @@ export class Sensors extends EventTarget {
     const frames = [];
     const fixes = [];
     let from = sinceT;
+    let gnss = null;
     for (let page = 0; page < 500; page++) {
       const r = await vs.drain({ sinceT: Math.floor(from), untilT: Math.ceil(untilT), max: 3000 });
+      gnss ??= r.gnss || null;
       for (const f of r.frames || []) {
         frames.push({ t: f[0], R: f[1] === null ? null : f.slice(1, 10), gyro: f[10] === null ? null : f.slice(10, 13), headingAcc: f[13], magAccuracy: f[14], replay: true });
       }
@@ -161,7 +163,7 @@ export class Sensors extends EventTarget {
       if (!r.more || !r.frames?.length) break;
       from = r.frames[r.frames.length - 1][0];
     }
-    return { frames, fixes };
+    return { frames, fixes, gnss };
   }
 
   /** Android app: open the app's system settings (e.g. after location was denied). */

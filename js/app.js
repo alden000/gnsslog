@@ -14,7 +14,7 @@ import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 
-const VERSION = '0.8.6';
+const VERSION = '0.8.7';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -214,10 +214,46 @@ const NATIVE_GAP_MS = 1000; // a heartbeat jump this long triggers a catch-up fr
 const NATIVE_HOLE_MS = 3000; // shorter stretches without data are bridged by the filters
 let nativeClock = false; // heartbeat seen: the data clock drives sampling
 let feedT = 0; // newest motion frame time fed to the filters
-let lastFixT = -Infinity; // newest GNSS fix time fed to the filters
+const seenFixes = new Set(); // fix times already queued (live or replayed): no duplicates
+const gnssQueue = []; // fixes waiting for the data clock to reach them, sorted by t
+let lastMotionWall = 0; // Date.now() when the last heartbeat arrived
 let catchingUp = false;
 const pendingNative = [];
 let lastLiveKick = 0;
+
+/**
+ * GNSS fixes are applied in data-time order with the motion frames: a fix waits in gnssQueue
+ * until the samples before it are taken. Without this, a fresh fix that arrives right after a
+ * long freeze would be applied before the frozen stretch is replayed, and the whole replay
+ * would sit at the end position.
+ */
+function queueFix(e) {
+  if (Number.isFinite(e.fixT)) {
+    if (seenFixes.has(e.fixT)) return; // already replayed / duplicate
+    seenFixes.add(e.fixT);
+    if (seenFixes.size > 50000) seenFixes.clear();
+    // A fix delivered late (the WebView was frozen) is placed near its own time, not at arrival.
+    // Normally arrival is ~0.2 s after the fix time, so this only changes late deliveries.
+    if (e.t > e.fixT + 1000) e = { ...e, t: e.fixT + 1000 };
+  }
+  let i = gnssQueue.length;
+  while (i > 0 && gnssQueue[i - 1].t > e.t) i--;
+  gnssQueue.splice(i, 0, e);
+}
+
+/** Apply the queued fixes up to data time t. */
+function flushFixes(t) {
+  while (gnssQueue.length && gnssQueue[0].t <= t) fusion.onGnss(gnssQueue.shift());
+}
+
+// No heartbeat at all (the sensor plugin stopped): apply fixes as they come. Only after the
+// heartbeat has stayed silent over three checks: right after a freeze it resumes within
+// milliseconds, and fixes must not be applied ahead of the replay.
+let silentChecks = 0;
+setInterval(() => {
+  silentChecks = Date.now() - lastMotionWall > 3000 ? silentChecks + 1 : 0;
+  if (!catchingUp && gnssQueue.length && silentChecks >= 3) flushFixes(Infinity);
+}, 1000);
 
 function nativeData(kind, e) {
   if (catchingUp) {
@@ -225,14 +261,12 @@ function nativeData(kind, e) {
     return;
   }
   if (kind === 'gnss') {
-    if (Number.isFinite(e.fixT) && !(e.fixT > lastFixT)) return; // already replayed / duplicate
-    // A fix delivered late (the WebView was frozen) is placed near its own time, not at arrival.
-    // Normally arrival is ~0.2 s after the fix time, so this only changes late deliveries.
-    if (Number.isFinite(e.fixT) && e.t > e.fixT + 1000) e = { ...e, t: e.fixT + 1000 };
-    fusion.onGnss(e);
-    if (Number.isFinite(e.fixT)) lastFixT = e.fixT;
+    queueFix(e);
+    if (!nativeClock || silentChecks >= 3) flushFixes(Infinity);
     return;
   }
+  lastMotionWall = Date.now();
+  silentChecks = 0;
   if (e.t <= feedT) return; // replayed already
   if (!nativeClock) {
     nativeClock = true;
@@ -268,13 +302,15 @@ function trackLateness(e) {
   }
 }
 
-/** Samples due before this frame, then the frame itself. */
+/** Samples due before this frame (each after the fixes due before it), then the frame. */
 function feedMotion(e) {
   trackLateness(e);
   while (nextTick <= e.t) {
+    flushFixes(nextTick);
     sampleAt(nextTick, !e.replay && Date.now() - nextTick < 1000);
     nextTick += SAMPLE_INTERVAL;
   }
+  flushFixes(e.t);
   fusion.onNativeMotion(e);
   feedT = e.t;
 }
@@ -285,6 +321,7 @@ async function catchUp(fromT, toT) {
   let replayed = 0;
   let replayedFixes = 0;
   let holes = 0;
+  let gnss = null; // native GNSS state at drain time (diagnostic)
   const seq0 = recorder.seq;
   // A stretch with no native data either (the whole app was frozen, or the log ran over) is
   // left as an honest hole: no coasting samples, a 'gap' event and a new segment.
@@ -294,21 +331,21 @@ async function catchUp(fromT, toT) {
     holes++;
   };
   try {
-    const { frames, fixes } = await sensors.drain(fromT, toT);
-    const evs = [...frames.map((f) => ['motion', f]), ...fixes.map((x) => ['gnss', x])].sort((a, b) => a[1].t - b[1].t);
-    for (const [kind, ev] of evs) {
-      if (kind === 'motion') {
-        if (ev.t <= feedT) continue;
-        if (ev.t - lastT > NATIVE_HOLE_MS) hole(lastT, ev.t);
-        feedMotion(ev);
-        lastT = ev.t;
-        replayed++;
-      } else if (!(ev.fixT <= lastFixT)) {
-        fusion.onGnss(ev);
-        lastFixT = ev.fixT;
-        replayedFixes++;
-      }
+    const data = await sensors.drain(fromT, toT);
+    const { frames, fixes } = data;
+    for (const x of fixes) {
+      const before = gnssQueue.length;
+      queueFix(x);
+      if (gnssQueue.length > before) replayedFixes++;
     }
+    for (const ev of frames) {
+      if (ev.t <= feedT) continue;
+      if (ev.t - lastT > NATIVE_HOLE_MS) hole(lastT, ev.t);
+      feedMotion(ev);
+      lastT = ev.t;
+      replayed++;
+    }
+    gnss = data.gnss;
   } catch (err) {
     console.warn('Native catch-up failed', err);
   }
@@ -322,6 +359,7 @@ async function catchUp(fromT, toT) {
       fixes: replayedFixes,
       samples: recorder.seq - seq0,
       holes,
+      ...(gnss ? { gnssOn: gnss.on, gnssProvider: gnss.provider, gnssLogged: gnss.logged, gnssLastFixAgoMs: gnss.lastFixAgoMs } : {}),
     });
   }
   if (replayed) recorder.flush();
@@ -578,10 +616,23 @@ $('#btn-rec').onclick = () => {
         });
         close();
         toast('Recording', { kind: 'ok' });
+        if (isNative) notePermissions();
       };
     },
   );
 };
+
+/** Android app: record location/battery permission levels in the session (diagnostics). */
+async function notePermissions() {
+  try {
+    const vs = plugin('VesselSensors');
+    const [loc, batt] = await Promise.all([vs.locationStatus(), vs.batteryStatus()]);
+    if (!recorder.session) return;
+    recorder.session.device = { ...recorder.session.device, perm: { location: loc.background ? 'always' : loc.fine ? 'while-using' : 'denied', battery: batt.unrestricted ? 'unrestricted' : 'optimised' } };
+    recorder.session.metaVersion++;
+    recorder.flush();
+  } catch {}
+}
 
 // ---------------------------------------------------------------- sensors / permissions
 
