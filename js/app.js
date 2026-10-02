@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.8.1';
+const VERSION = '0.8.2';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -247,8 +247,25 @@ function nativeData(kind, e) {
   }
 }
 
+// Live events that arrive seconds after they happened (the WebView was frozen and Android
+// delivered the queue in one go) are logged as one 'late' event per burst, for diagnostics.
+let lateRun = null;
+function trackLateness(e) {
+  if (e.replay) return;
+  const lag = Date.now() - e.t;
+  if (lag > 1500) {
+    if (!lateRun) lateRun = { t: e.t, maxLag: 0, n: 0 };
+    lateRun.maxLag = Math.max(lateRun.maxLag, lag);
+    lateRun.n++;
+  } else if (lateRun && lag < 1000) {
+    recorder.note('late', lateRun.t, { spanMs: Math.round(e.t - lateRun.t), maxLagMs: Math.round(lateRun.maxLag), frames: lateRun.n });
+    lateRun = null;
+  }
+}
+
 /** Samples due before this frame, then the frame itself. */
 function feedMotion(e) {
+  trackLateness(e);
   while (nextTick <= e.t) {
     sampleAt(nextTick, !e.replay && Date.now() - nextTick < 1000);
     nextTick += SAMPLE_INTERVAL;
@@ -259,31 +276,50 @@ function feedMotion(e) {
 
 async function catchUp(fromT, toT) {
   catchingUp = true;
-  let covered = fromT;
+  let lastT = fromT; // end of the stretch covered so far
   let replayed = 0;
+  let replayedFixes = 0;
+  let holes = 0;
+  const seq0 = recorder.seq;
+  // A stretch with no native data either (the whole app was frozen, or the log ran over) is
+  // left as an honest hole: no coasting samples, a 'gap' event and a new segment.
+  const hole = (a, b) => {
+    recorder.logGap(a, b);
+    nextTick = Math.ceil(b / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
+    holes++;
+  };
   try {
     const { frames, fixes } = await sensors.drain(fromT, toT);
     const evs = [...frames.map((f) => ['motion', f]), ...fixes.map((x) => ['gnss', x])].sort((a, b) => a[1].t - b[1].t);
     for (const [kind, ev] of evs) {
       if (kind === 'motion') {
         if (ev.t <= feedT) continue;
+        if (ev.t - lastT > NATIVE_GAP_MS) hole(lastT, ev.t);
         feedMotion(ev);
-        covered = ev.t;
+        lastT = ev.t;
         replayed++;
       } else if (!(ev.fixT <= lastFixT)) {
         fusion.onGnss(ev);
         lastFixT = ev.fixT;
+        replayedFixes++;
       }
     }
   } catch (err) {
     console.warn('Native catch-up failed', err);
   }
-  if (toT - covered > NATIVE_GAP_MS) {
-    // Nothing was logged natively for this stretch (the whole app was frozen, or the log ran
-    // over): leave an honest hole instead of coasting samples.
-    recorder.logGap(covered, toT);
-    nextTick = Math.ceil(toT / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
+  if (toT - lastT > NATIVE_GAP_MS) {
+    hole(lastT, toT);
     feedT = toT - 1;
+  }
+  if (replayed && recorder.active) {
+    // Diagnostic: the WebView missed this stretch and it was recovered from the native log.
+    recorder.note('catchup', fromT, {
+      frozenMs: Math.round(toT - fromT),
+      frames: replayed,
+      fixes: replayedFixes,
+      samples: recorder.seq - seq0,
+      holes,
+    });
   }
   if (replayed) recorder.flush();
   catchingUp = false;

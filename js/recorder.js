@@ -232,7 +232,13 @@ export class Recorder extends EventTarget {
   logGap(fromT, toT) {
     if (!this.session || this.paused) return;
     this.segment++;
-    this.session.events.push({ type: 'gap', t: fromT, seq: this.seq, gapMs: Math.round(toT - fromT), segment: this.segment });
+    this.note('gap', fromT, { gapMs: Math.round(toT - fromT), segment: this.segment });
+  }
+
+  /** Diagnostic event at data time t (e.g. 'catchup', 'late'); seq is the next sample. */
+  note(type, t, data = {}) {
+    if (!this.session || this.paused) return;
+    this.session.events.push({ type, t: Math.round(t), seq: this.seq, ...data });
     this.session.metaVersion++;
     this.flush();
   }

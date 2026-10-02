@@ -139,7 +139,7 @@ try {
     return [t0, t1];
   };
   const dropWin = await freeze('drop', 3000); // events lost: caught up from the native log
-  const burstWin = await freeze('burst', 2000); // events delivered late, in one go
+  const burstWin = await freeze('burst', 3000); // events delivered late, in one go
   const deadWin = await freeze('dead', 2500); // whole app frozen: nothing to recover
   await page.click('#btn-rec');
   await page.click('[data-act="stop"]');
@@ -156,6 +156,8 @@ try {
     return {
       events: s.events.map((e) => e.type),
       gap: s.events.find((e) => e.type === 'gap'),
+      catchup: s.events.find((e) => e.type === 'catchup'),
+      late: s.events.find((e) => e.type === 'late'),
       n: rows.length,
       big,
       meanDt: dts.reduce((a, b) => a + b, 0) / dts.length,
@@ -169,7 +171,9 @@ try {
     };
   }, win);
   console.log({ ...info, drop: info.drop.length, calls: info.calls.length });
-  assert.deepEqual(info.events, ['start', 'gap', 'stop'], 'no pause in the app; one gap for the whole-app freeze');
+  assert.deepEqual(info.events, ['start', 'catchup', 'late', 'gap', 'stop'], 'no pause; catch-up, late burst and gap are logged');
+  assert.ok(info.catchup.frozenMs > 2500 && info.catchup.holes === 0 && info.catchup.fixes >= 2 && info.catchup.samples >= 12, `catchup event ${JSON.stringify(info.catchup)}`);
+  assert.ok(info.late.spanMs > 1000 && info.late.maxLagMs > 1500, `late event ${JSON.stringify(info.late)}`);
   assert.equal(info.big.length, 1, `only the whole-app freeze leaves a hole: ${JSON.stringify(info.big)}`);
   assert.ok(Math.abs(info.big[0][1] - 2500) < 700, `hole matches the freeze: ${info.big[0][1]} ms`);
   assert.ok(Math.abs(info.gap.gapMs - 2500) < 700, `gap event ${info.gap.gapMs} ms`);
