@@ -41,13 +41,21 @@ All colours are tokens at the top of `css/app.css`; the canvas plot reads them a
 | Export | CSV (samples) or JSON (session + events + samples), via the share sheet on phones. |
 | Offline | Service worker caches the app shell (and web fonts after first load). Installable to the home screen. |
 
+## Hub and Analyzer (self-hosted)
+
+`hub/` receives uploads live, stores them in SQLite and serves the **GNSS Log Analyzer** (replay,
+charts, statistics, trimming, data extraction to CSV/JSON/GPX/GeoJSON/KML, image export to
+SVG/JPG/PNG). It runs on any PC with Node.js 22.13+ and is published safely through Cloudflare
+Tunnel + Access. Setup for a Windows mini PC: [hub/README.md](hub/README.md).
+
 ## Running it
 
 Sensors only work in a **secure context** (HTTPS, or `http://localhost`).
 
 ```bash
 npm start            # static dev server on http://localhost:8080
-npm run receiver     # reference upload receiver on http://localhost:8787/ingest
+npm run hub          # hub + analyser on http://localhost:8787 (uploads: /ingest)
+npm run receiver     # minimal reference receiver (files on disk) on http://localhost:8787/ingest
 npm test             # unit tests (filters, attitude maths, geodesy)
 npm install && npm run test:e2e   # Playwright end-to-end run with simulated sensors
 ```
@@ -219,5 +227,6 @@ js/visualizer.js      canvas plot
 js/export.js          CSV / JSON export
 sw.js                 offline cache
 server/               dev server + reference receiver
+hub/                  hub server (SQLite), analyser web app, Windows installer
 tests/                unit tests + Playwright e2e
 ```

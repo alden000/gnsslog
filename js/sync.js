@@ -10,6 +10,7 @@
 const RETRY_MIN = 5000;
 const RETRY_MAX = 5 * 60 * 1000;
 const PERIODIC = 20000;
+const LIVE_PERIOD = 3000; // while recording: near real-time upload for the hub's live view
 
 export class SyncManager extends EventTarget {
   constructor(db, settings) {
@@ -24,6 +25,16 @@ export class SyncManager extends EventTarget {
     window.addEventListener('online', () => this.kick(true));
     window.addEventListener('offline', () => this._set({ state: 'offline' }));
     setInterval(() => this.kick(), PERIODIC);
+    this.liveTimer = null;
+  }
+
+  /** While recording, upload every few seconds so the receiver can follow the session live. */
+  setLive(on) {
+    if (on && !this.liveTimer) this.liveTimer = setInterval(() => this.kick(), LIVE_PERIOD);
+    if (!on && this.liveTimer) {
+      clearInterval(this.liveTimer);
+      this.liveTimer = null;
+    }
   }
 
   get configured() {

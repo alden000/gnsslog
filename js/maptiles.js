@@ -58,6 +58,13 @@ export class TileCache {
     return null;
   }
 
+  /** Number of tiles still loading. */
+  pending() {
+    let n = 0;
+    for (const e of this.map.values()) if (!e.ok && !e.failedAt) n++;
+    return n;
+  }
+
   /** Already-loaded image for url, without requesting it. */
   peek(url) {
     const e = this.map.get(url);

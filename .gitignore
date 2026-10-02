@@ -16,3 +16,6 @@ android/capacitor-cordova-android-plugins/
 keystore.properties
 password.txt
 *.idsig
+
+# hub runtime data
+hub/data/

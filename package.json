@@ -1,16 +1,17 @@
 {
   "name": "gnsslog",
-  "version": "0.7.4",
+  "version": "0.8.0",
   "private": true,
-  "description": "PWA vessel position/heading logger with skyhook view",
+  "description": "PWA vessel position/heading logger, with a self-hosted hub and analyser",
   "type": "module",
   "scripts": {
     "start": "node server/dev-server.mjs",
     "receiver": "node server/receiver.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/resume.mjs && node tests/e2e/native-mock.mjs && node tests/e2e/offline.mjs",
+    "test:e2e": "node tests/e2e/smoke.mjs && node tests/e2e/resume.mjs && node tests/e2e/native-mock.mjs && node tests/e2e/offline.mjs && node --disable-warning=ExperimentalWarning tests/e2e/hub.mjs",
     "icons": "node tools/render-icons.mjs && node tools/render-android-icons.mjs",
-    "android:sync": "node tools/build-www.mjs && cap sync android"
+    "android:sync": "node tools/build-www.mjs && cap sync android",
+    "hub": "node --disable-warning=ExperimentalWarning hub/server.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",

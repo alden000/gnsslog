@@ -1,5 +1,5 @@
 // End-to-end smoke test: simulated GNSS + compass/gyro on a phone-sized Chromium.
-// Records a test case, marks a location, syncs to the reference receiver, opens playback.
+// Records a test case, marks a location, uploads to the hub (hub/server.mjs), opens playback.
 // Usage: node tests/e2e/smoke.mjs [outDir]   (writes screenshots to outDir)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
@@ -13,7 +13,7 @@ mkdirSync(out, { recursive: true });
 const data = mkdtempSync(join(tmpdir(), 'gnsslog-recv-'));
 const procs = [
   spawn('node', ['server/dev-server.mjs', '8091'], { stdio: 'ignore' }),
-  spawn('node', ['server/receiver.mjs', '8792'], { stdio: 'ignore', env: { ...process.env, RECEIVER_DATA: data } }),
+  spawn('node', ['--disable-warning=ExperimentalWarning', 'hub/server.mjs'], { stdio: 'ignore', env: { ...process.env, HUB_DATA: data, HUB_PORT: '8792', HUB_INGEST_TOKEN: 'smoke-token' } }),
 ];
 const cleanup = () => {
   procs.forEach((p) => p.kill());
@@ -142,22 +142,26 @@ try {
   assert.ok(Math.abs(info.hdg - 45) < 3, `heading ${info.hdg}`);
   assert.ok(info.sky > 0);
 
-  // Cloud sync to the reference receiver.
+  // Cloud upload to the hub.
   await page.click('.dock-tab[data-tab="settings"]');
   await sleep(400);
   await page.screenshot({ path: join(out, '4-settings.png'), fullPage: false });
+  await page.fill('[data-setting="authValue"]', 'Bearer smoke-token');
+  await page.press('[data-setting="authValue"]', 'Tab');
   await page.fill('[data-setting="endpoint"]', 'http://localhost:8792/ingest');
   await page.press('[data-setting="endpoint"]', 'Tab');
   await page.click('.dock-tab[data-tab="sessions"]');
   await page.waitForFunction(() => document.querySelector('.badge')?.textContent === 'Uploaded', null, { timeout: 10000 });
   await sleep(900);
   await page.screenshot({ path: join(out, '3-sessions.png') });
-  const remote = await (await fetch('http://localhost:8792/sessions')).json();
+  const remote = await (await fetch('http://localhost:8792/api/sessions')).json();
   assert.equal(remote.length, 1);
   assert.equal(remote[0].sampleCount, info.count);
   assert.equal(remote[0].final, true);
-  const csv = await (await fetch(`http://localhost:8792/sessions/${remote[0].id}.csv`)).text();
+  assert.equal(remote[0].marks, 1);
+  const csv = await (await fetch(`http://localhost:8792/api/sessions/${remote[0].id}/export.csv`)).text();
   assert.equal(csv.trim().split('\n').length - 1, info.count, 'all samples uploaded');
+  assert.match(csv.split('\n')[0], /markDist/);
 
   // Playback.
   await page.click('.session');
