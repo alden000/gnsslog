@@ -33,3 +33,15 @@ for (const [lat, lon, mpp] of [[1.2952, 103.7923, 0.3], [1.4223, 103.7951, 5], [
     assert.ok(dw > 127 && dw <= 257, `tile drawn ${dw.toFixed(0)} px wide`);
   });
 }
+
+test('high-density screens get sharper tiles (at least one tile pixel per device pixel)', () => {
+  const geo = new LocalFrame(1.29, 103.79);
+  for (const dpr of [1, 2, 2.625, 3]) {
+    const ctx = mockCtx();
+    drawTileLayer(ctx, cache, MAP_SOURCES.street, { geo, center: { x: 0, y: 0 }, mpp: 1.5, rot: 0, w: 390, h: 450, dpr });
+    const dw = ctx.draws[0].d[2] - 0.5; // CSS px per 256-px tile
+    assert.ok(dw * dpr <= 256 + 1, `dpr ${dpr}: a tile spans ${(dw * dpr).toFixed(0)} device px (> 256 = blurry)`);
+    assert.ok(dw * dpr > 128 - 1, `dpr ${dpr}: not needlessly fine (${(dw * dpr).toFixed(0)} device px)`);
+    assert.ok(ctx.draws.length <= 180, `dpr ${dpr}: ${ctx.draws.length} tiles`);
+  }
+});

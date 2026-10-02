@@ -29,7 +29,8 @@ export const SEAMARKS = {
 };
 
 const EARTH_CIRC = 2 * Math.PI * 6378137;
-const MAX_TILES = 400; // in-memory images kept
+const MAX_TILES = 600; // in-memory images kept
+const MAX_TILES_PER_VIEW = 180; // a larger view drops to coarser tiles
 const RETRY_MS = 30000;
 
 /** Small LRU of tile images; requests a tile the first time it is asked for. */
@@ -91,6 +92,9 @@ const yToLat = (y, n) => Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * R2D
 /**
  * Draw one tile layer.
  * view: { geo: LocalFrame, center: {x, y} (local metres), mpp, rot (deg), w, h, dpr }
+ * mpp, w and h are in the units the context draws in (CSS pixels for the app's visualiser);
+ * dpr = device pixels per such unit, so tiles are chosen sharp on high-density ("retina")
+ * screens: at least one tile pixel per device pixel.
  */
 export function drawTileLayer(ctx, cache, src, view, { dark = false, alpha = 1 } = {}) {
   const { geo, center, mpp, rot, w, h, dpr } = view;
@@ -98,8 +102,9 @@ export function drawTileLayer(ctx, cache, src, view, { dark = false, alpha = 1 }
   if (!Number.isFinite(c.lat) || Math.abs(c.lat) > 85) return;
   const cosLat = Math.cos(c.lat * D2R);
 
-  // Zoom whose tiles are at least as sharp as the screen, capped by the source.
-  let z = Math.ceil(Math.log2((EARTH_CIRC * cosLat) / (256 * mpp)));
+  // Zoom whose tiles are at least as sharp as the screen's device pixels, capped by the source.
+  const density = Math.min(Math.max(dpr || 1, 1), 3);
+  let z = Math.ceil(Math.log2((EARTH_CIRC * cosLat * density) / (256 * mpp)));
   z = Math.max(0, Math.min(src.maxZoom, z));
 
   const radius = (Math.hypot(w, h) / 2) * mpp; // metres covered (any rotation)
@@ -112,7 +117,7 @@ export function drawTileLayer(ctx, cache, src, view, { dark = false, alpha = 1 }
     x1 = Math.floor(lonToX(c.lon + dLon, n));
     y0 = Math.floor(latToY(Math.min(85, c.lat + dLat), n));
     y1 = Math.floor(latToY(Math.max(-85, c.lat - dLat), n));
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 80 || z === 0) break;
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) <= MAX_TILES_PER_VIEW || z === 0) break;
     z--; // very large view: fewer, coarser tiles
   }
 
@@ -123,6 +128,7 @@ export function drawTileLayer(ctx, cache, src, view, { dark = false, alpha = 1 }
   ctx.translate(cx, cy);
   ctx.rotate((-rot * Math.PI) / 180);
   ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   for (let ty = Math.max(0, y0); ty <= Math.min(n - 1, y1); ty++) {
     for (let txRaw = x0; txRaw <= x1; txRaw++) {
       const tx = ((txRaw % n) + n) % n;

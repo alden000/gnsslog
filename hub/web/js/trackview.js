@@ -445,7 +445,8 @@ export class TrackView {
       c.height = this.canvas.height;
       const ctx = c.getContext('2d');
       ctx.clearRect(0, 0, c.width, c.height);
-      const view = { geo: this.data.frame, center: this.center, mpp: this.mpp / this.dpr, rot: 0, w: c.width, h: c.height, dpr: this.dpr };
+      // Drawn in device pixels already (mpp per device pixel), so dpr is 1 here.
+      const view = { geo: this.data.frame, center: this.center, mpp: this.mpp / this.dpr, rot: 0, w: c.width, h: c.height, dpr: 1 };
       drawTileLayer(ctx, tileCache, src, view, { dark: this.pal.name === 'dark' });
       if (this.opts.seamarks) drawTileLayer(ctx, tileCache, SEAMARKS, view, {});
     }
