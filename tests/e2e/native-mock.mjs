@@ -21,15 +21,31 @@ try {
   await page.addInitScript(() => {
     // Imitates the REAL Android bridge: it provides PluginHeaders, nativePromise and nativeCallback
     // but NOT registerPlugin (that comes from @capacitor/core, loaded by the app as js/capacitor.js).
-    const log = (window.__native = { calls: [], watchers: {}, listeners: [], shared: [] });
+    const log = (window.__native = { calls: [], watchers: {}, listeners: [], shared: [], frames: [], fixes: [], acks: 0, freeze: null, queued: [] });
     let nextId = 1;
+    let background = false;
+    // freeze: null | 'drop' (WebView frozen, events lost) | 'burst' (WebView frozen, events
+    // delivered late) | 'dead' (whole app frozen: native log stops too)
+    const deliver = (fn) => {
+      if (log.freeze === 'drop' || log.freeze === 'dead') return;
+      if (log.freeze === 'burst') log.queued.push(fn);
+      else fn();
+    };
+    log.unfreeze = () => {
+      log.freeze = null;
+      log.queued.splice(0).forEach((fn) => fn());
+    };
     const impl = {
       BackgroundGeolocation: {
         addWatcher(opts, cb) {
           log.calls.push(['addWatcher', !!opts.backgroundMessage]);
           let k = 0;
           const id = String(nextId);
-          log.watchers[id] = setInterval(() => cb({ latitude: 1.3 + ++k * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false }), 1000);
+          log.watchers[id] = setInterval(() => {
+            const loc = { latitude: 1.3 + ++k * 0.00001, longitude: 103.8, accuracy: 3, altitude: 5, altitudeAccuracy: 3, speed: 1.1, bearing: 0, time: Date.now(), simulated: false };
+            if (background && log.freeze !== 'dead') log.fixes.push([Date.now(), loc.time, loc.latitude, loc.longitude, 3, 5, 3, 1.1, 0]);
+            deliver(() => cb(loc));
+          }, 1000);
         },
         removeWatcher({ id }) { log.calls.push(['removeWatcher', id]); clearInterval(log.watchers[id]); delete log.watchers[id]; return Promise.resolve(); },
         openSettings() { log.calls.push(['openSettings']); return Promise.resolve(); },
@@ -41,11 +57,31 @@ try {
           // Flat phone heading 045 (alpha 315): R = Rz(315); gyro quiet. 25 Hz, like the plugin.
           const a = (315 * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
           const R = [c, -s, 0, s, c, 0, 0, 0, 1];
-          setInterval(() => log.listeners.forEach((cb) => cb({ t: Date.now(), R, gyro: [0, 0, 0.01], headingAcc: 3, magAccuracy: 3 })), 40);
+          let n = 0;
+          setInterval(() => {
+            const e = { t: Date.now(), R, gyro: [0, 0, 0.01], headingAcc: 3, magAccuracy: 3 };
+            if (background && log.freeze !== 'dead' && n++ % 2 === 0) log.frames.push([e.t, ...R, 0, 0, 0.01, 3, 3]); // ~10 Hz native log
+            deliver(() => log.listeners.forEach((cb) => cb(e)));
+          }, 40);
           return Promise.resolve({ rotation: true, gyro: true });
         },
         stop() { return Promise.resolve(); },
-        setBackground({ enabled }) { log.calls.push(['setBackground', enabled]); return Promise.resolve(); },
+        setBackground({ enabled }) {
+          log.calls.push(['setBackground', enabled]);
+          background = enabled;
+          if (enabled) log.frames.length = log.fixes.length = 0;
+          return Promise.resolve();
+        },
+        ack() { log.acks++; return Promise.resolve(); },
+        drain({ sinceT, untilT, max }) {
+          log.calls.push(['drain']);
+          const frames = log.frames.filter((f) => f[0] > sinceT && f[0] <= untilT);
+          const more = frames.length > max;
+          const sent = frames.slice(0, max);
+          const fixUntil = more ? sent.at(-1)[0] : untilT;
+          const fixes = log.fixes.filter((f) => f[0] > sinceT && f[0] <= fixUntil);
+          return Promise.resolve({ frames: sent, fixes, more, oldestT: log.frames[0]?.[0] ?? -1 });
+        },
         batteryStatus() { return Promise.resolve({ unrestricted: false }); },
         requestUnrestrictedBattery() { log.calls.push(['battery']); return Promise.resolve(); },
       },
@@ -94,22 +130,58 @@ try {
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await sleep(1000);
+  // Screen off: Android freezes the WebView while the native services keep logging.
+  const freeze = async (mode, ms) => {
+    const t0 = await page.evaluate((m) => ((window.__native.freeze = m), Date.now()), mode);
+    await sleep(ms);
+    const t1 = await page.evaluate(() => (window.__native.unfreeze(), Date.now()));
+    await sleep(1500);
+    return [t0, t1];
+  };
+  const dropWin = await freeze('drop', 3000); // events lost: caught up from the native log
+  const burstWin = await freeze('burst', 2000); // events delivered late, in one go
+  const deadWin = await freeze('dead', 2500); // whole app frozen: nothing to recover
   await page.click('#btn-rec');
   await page.click('[data-act="stop"]');
   await sleep(600);
 
-  const info = await page.evaluate(async () => {
+  const win = { drop: dropWin, burst: burstWin, dead: deadWin };
+  const info = await page.evaluate(async (win) => {
     const { db } = window.gnsslog;
     const [s] = await db.listSessions();
     const rows = await db.getSamples(s.id);
     const dts = rows.slice(1).map((r, i) => r.t - rows[i].t);
-    return { events: s.events.map((e) => e.type), n: rows.length, maxDt: Math.max(...dts), meanDt: dts.reduce((a, b) => a + b, 0) / dts.length, hdg: rows.at(-1).hdg, segs: [...new Set(rows.map((r) => r.segment))], calls: window.__native.calls };
-  });
-  console.log(info);
-  assert.deepEqual(info.events, ['start', 'stop'], 'no pause while backgrounded in the app');
-  assert.ok(info.maxDt < 300, `5 Hz kept while hidden (max gap ${info.maxDt} ms)`);
+    const big = rows.slice(1).map((r, i) => [rows[i].t, r.t - rows[i].t]).filter(([, dt]) => dt > 300);
+    const inWin = ([a, b]) => rows.filter((r) => r.t > a + 300 && r.t < b - 300);
+    return {
+      events: s.events.map((e) => e.type),
+      gap: s.events.find((e) => e.type === 'gap'),
+      n: rows.length,
+      big,
+      meanDt: dts.reduce((a, b) => a + b, 0) / dts.length,
+      hdg: rows.at(-1).hdg,
+      segs: [...new Set(rows.map((r) => r.segment))],
+      calls: window.__native.calls,
+      acks: window.__native.acks,
+      drop: inWin(win.drop).map((r) => [r.gnssNew, r.lat]),
+      burst: inWin(win.burst).length,
+      dead: inWin(win.dead).length,
+    };
+  }, win);
+  console.log({ ...info, drop: info.drop.length, calls: info.calls.length });
+  assert.deepEqual(info.events, ['start', 'gap', 'stop'], 'no pause in the app; one gap for the whole-app freeze');
+  assert.equal(info.big.length, 1, `only the whole-app freeze leaves a hole: ${JSON.stringify(info.big)}`);
+  assert.ok(Math.abs(info.big[0][1] - 2500) < 700, `hole matches the freeze: ${info.big[0][1]} ms`);
+  assert.ok(Math.abs(info.gap.gapMs - 2500) < 700, `gap event ${info.gap.gapMs} ms`);
+  assert.ok(info.drop.length >= 10, `samples recovered for the dropped freeze: ${info.drop.length}`);
+  assert.ok(info.drop.filter(([n]) => n === 1).length >= 1, 'GNSS fixes recovered for the dropped freeze');
+  assert.ok(info.drop.at(-1)[1] > info.drop[0][1], 'position advances through the recovered stretch');
+  assert.ok(info.burst >= 5, `samples placed at their own time for the late burst: ${info.burst}`);
+  assert.equal(info.dead, 0, 'no coasting samples invented for the whole-app freeze');
   assert.ok(Math.abs(info.hdg - 45) < 2, `heading ${info.hdg}`);
-  assert.deepEqual(info.segs, [0]);
+  assert.deepEqual(info.segs, [0, 1]);
+  assert.ok(info.acks > 3, 'JavaScript keeps acking the plugin');
+  assert.ok(info.calls.some((x) => x[0] === 'drain'), 'catch-up used the native log');
   const c = info.calls.map((x) => x.join(':'));
   assert.ok(c.includes('setBackground:true') && c.includes('setBackground:false'), 'background mode on while recording');
   assert.ok(c.includes('addWatcher:true'), 'location watcher switched to background mode');

@@ -13,7 +13,7 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 
-const VERSION = '0.8.0';
+const VERSION = '0.8.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -152,13 +152,10 @@ let interrupted = await recorder.findInterrupted();
 if (interrupted && Date.now() - interrupted.lastT > RESUME_WINDOW) interrupted = null;
 await recorder.recoverInterrupted(interrupted?.session.id);
 
-sensors.addEventListener('gnss', (e) => fusion.onGnss(e.detail));
+sensors.addEventListener('gnss', (e) => (isNative ? nativeData('gnss', e.detail) : fusion.onGnss(e.detail)));
 sensors.addEventListener('orientation', (e) => fusion.onOrientation(e.detail));
 sensors.addEventListener('motion', (e) => fusion.onMotion(e.detail));
-sensors.addEventListener('nativeMotion', (e) => {
-  fusion.onNativeMotion(e.detail);
-  maybeTick(); // native 25 Hz heartbeat keeps the 5 Hz logger on time even if timers are throttled
-});
+sensors.addEventListener('nativeMotion', (e) => nativeData('motion', e.detail));
 
 let origin = null;
 fusion.addEventListener('frame', (e) => {
@@ -177,13 +174,10 @@ function trailCap() {
 
 let nextTick = Math.ceil(Date.now() / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
 let tickTimer = 0;
-function maybeTick() {
-  if (Date.now() >= nextTick - 10) tick();
-}
-function tick() {
-  clearTimeout(tickTimer);
-  const now = Date.now();
-  const s = fusion.state(now);
+
+/** One 5 Hz sample for time t. live: it is happening now (draw it); else history being replayed. */
+function sampleAt(t, live) {
+  const s = fusion.state(t);
   s.origin = origin;
   lastState = s;
   if (s.hasFix) {
@@ -191,15 +185,111 @@ function tick() {
     const cap = trailCap();
     if (trail.length > cap) trail.splice(0, trail.length - cap);
   }
-  recorder.add(s);
-  if (document.visibilityState === 'visible') renderLive(s);
-  // Drift-free schedule on the 200 ms grid; skip missed slots after a stall.
+  recorder.add(s, { batch: !live });
+  if (live && document.visibilityState === 'visible') renderLive(s);
+}
+
+// Web: wall-clock ticker on a drift-free 200 ms grid. Missed slots after a stall are skipped (the
+// recorder pauses while the page is hidden). The Android app switches to the data clock below as
+// soon as the native heartbeat arrives.
+function tick() {
+  clearTimeout(tickTimer);
+  if (nativeClock) return;
+  sampleAt(Date.now(), true);
   nextTick += SAMPLE_INTERVAL;
   const t = Date.now();
   if (nextTick < t) nextTick = Math.ceil(t / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
   tickTimer = setTimeout(tick, nextTick - t);
 }
 tickTimer = setTimeout(tick, nextTick - Date.now());
+
+// Android app: samples follow the timestamps of the native data (25 Hz heartbeat), not the time
+// JavaScript happens to run. Android may freeze the WebView with the screen off while the native
+// services keep running; the first heartbeat after such a freeze shows a jump, and the missing
+// stretch is fetched from the plugin's native log and replayed at its original timestamps.
+const NATIVE_GAP_MS = 1000;
+let nativeClock = false; // heartbeat seen: the data clock drives sampling
+let feedT = 0; // newest motion frame time fed to the filters
+let lastFixT = -Infinity; // newest GNSS fix time fed to the filters
+let catchingUp = false;
+const pendingNative = [];
+let lastLiveKick = 0;
+
+function nativeData(kind, e) {
+  if (catchingUp) {
+    pendingNative.push([kind, e]);
+    return;
+  }
+  if (kind === 'gnss') {
+    if (Number.isFinite(e.fixT) && !(e.fixT > lastFixT)) return; // already replayed / duplicate
+    // A fix delivered late (WebView was frozen) is placed at its own time, not at arrival.
+    if (Number.isFinite(e.fixT) && e.t - e.fixT > 5000) e = { ...e, t: e.fixT };
+    fusion.onGnss(e);
+    if (Number.isFinite(e.fixT)) lastFixT = e.fixT;
+    return;
+  }
+  if (e.t <= feedT) return; // replayed already
+  if (!nativeClock) {
+    nativeClock = true;
+    clearTimeout(tickTimer);
+    nextTick = Math.ceil(e.t / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
+  }
+  if (feedT && e.t - feedT > NATIVE_GAP_MS) {
+    pendingNative.push([kind, e]);
+    catchUp(feedT, e.t);
+    return;
+  }
+  feedMotion(e);
+  // Live upload from the heartbeat too: JavaScript timers are throttled with the screen off.
+  if (recorder.active && Date.now() - lastLiveKick > 3000) {
+    lastLiveKick = Date.now();
+    sync.kick();
+  }
+}
+
+/** Samples due before this frame, then the frame itself. */
+function feedMotion(e) {
+  while (nextTick <= e.t) {
+    sampleAt(nextTick, !e.replay && Date.now() - nextTick < 1000);
+    nextTick += SAMPLE_INTERVAL;
+  }
+  fusion.onNativeMotion(e);
+  feedT = e.t;
+}
+
+async function catchUp(fromT, toT) {
+  catchingUp = true;
+  let covered = fromT;
+  let replayed = 0;
+  try {
+    const { frames, fixes } = await sensors.drain(fromT, toT);
+    const evs = [...frames.map((f) => ['motion', f]), ...fixes.map((x) => ['gnss', x])].sort((a, b) => a[1].t - b[1].t);
+    for (const [kind, ev] of evs) {
+      if (kind === 'motion') {
+        if (ev.t <= feedT) continue;
+        feedMotion(ev);
+        covered = ev.t;
+        replayed++;
+      } else if (!(ev.fixT <= lastFixT)) {
+        fusion.onGnss(ev);
+        lastFixT = ev.fixT;
+      }
+    }
+  } catch (err) {
+    console.warn('Native catch-up failed', err);
+  }
+  if (toT - covered > NATIVE_GAP_MS) {
+    // Nothing was logged natively for this stretch (the whole app was frozen, or the log ran
+    // over): leave an honest hole instead of coasting samples.
+    recorder.logGap(covered, toT);
+    nextTick = Math.ceil(toT / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
+    feedT = toT - 1;
+  }
+  if (replayed) recorder.flush();
+  catchingUp = false;
+  const queued = pendingNative.splice(0).sort((a, b) => a[1].t - b[1].t);
+  for (const [k, e] of queued) nativeData(k, e);
+}
 
 // ---------------------------------------------------------------- live screen
 

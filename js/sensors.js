@@ -91,6 +91,9 @@ export class Sensors extends EventTarget {
       this._emit('nativeMotion', e);
     });
     const has = await vs.start();
+    // Tell the plugin JavaScript is alive; it holds live events back while we are frozen.
+    clearInterval(this._ackTimer);
+    this._ackTimer = setInterval(() => vs.ack().catch(() => {}), 1000);
     if (!has.rotation) this._setStatus({ orientation: 'unsupported' });
     if (!has.gyro) this._setStatus({ motion: 'unsupported' });
   }
@@ -138,6 +141,29 @@ export class Sensors extends EventTarget {
     );
   }
 
+  /**
+   * Android app: what the native log recorded with sinceT < t <= untilT (all pages), as
+   * { frames: [nativeMotion events], fixes: [gnss events] }, oldest first.
+   */
+  async drain(sinceT, untilT) {
+    const vs = plugin('VesselSensors');
+    const frames = [];
+    const fixes = [];
+    let from = sinceT;
+    for (let page = 0; page < 500; page++) {
+      const r = await vs.drain({ sinceT: Math.floor(from), untilT: Math.ceil(untilT), max: 3000 });
+      for (const f of r.frames || []) {
+        frames.push({ t: f[0], R: f[1] === null ? null : f.slice(1, 10), gyro: f[10] === null ? null : f.slice(10, 13), headingAcc: f[13], magAccuracy: f[14], replay: true });
+      }
+      for (const x of r.fixes || []) {
+        fixes.push({ t: x[0], fixT: x[1], lat: x[2], lon: x[3], acc: x[4], alt: x[5], altAcc: x[6], speed: x[7], cog: x[8] !== null && x[7] > 0 ? x[8] : null, replay: true });
+      }
+      if (!r.more || !r.frames?.length) break;
+      from = r.frames[r.frames.length - 1][0];
+    }
+    return { frames, fixes };
+  }
+
   /** Android app: open the app's system settings (e.g. after location was denied). */
   openSettings() {
     if (isNative) plugin('BackgroundGeolocation').openSettings();
@@ -145,6 +171,7 @@ export class Sensors extends EventTarget {
 
   stop() {
     this.running = false;
+    clearInterval(this._ackTimer);
     if (isNative) {
       if (this.watchId && this.watchId !== 'pending') plugin('BackgroundGeolocation').removeWatcher({ id: this.watchId }).catch(() => {});
       plugin('VesselSensors').stop().catch(() => {});

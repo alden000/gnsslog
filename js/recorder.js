@@ -213,8 +213,8 @@ export class Recorder extends EventTarget {
     return this.session;
   }
 
-  /** Called by the 5 Hz ticker with the fused state. */
-  add(state) {
+  /** Called by the 5 Hz ticker with the fused state. batch: history being replayed (write in bulk). */
+  add(state, { batch = false } = {}) {
     if (!this.session || this.paused) return;
     if (!this.session.origin && state.origin) this.session.origin = state.origin;
     const row = sampleFromState(state, this.session.id, this.seq++, this.lastGnssT);
@@ -225,7 +225,16 @@ export class Recorder extends EventTarget {
     }
     if (state.gnss) this.lastGnssT = state.gnss.t;
     this.buffer.push(row);
-    if (this.buffer.length >= FLUSH_EVERY) this.flush();
+    if (this.buffer.length >= (batch ? 250 : FLUSH_EVERY)) this.flush();
+  }
+
+  /** A stretch with no data at all (the app was frozen): marked as an event, new segment. */
+  logGap(fromT, toT) {
+    if (!this.session || this.paused) return;
+    this.segment++;
+    this.session.events.push({ type: 'gap', t: fromT, seq: this.seq, gapMs: Math.round(toT - fromT), segment: this.segment });
+    this.session.metaVersion++;
+    this.flush();
   }
 
   /** Serialised writes so samples always land in order. */
