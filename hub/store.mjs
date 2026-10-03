@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { upgradeSession, upgradeSample } from '../js/compat.js';
-import { computeStats } from './web/js/stats.js';
+import { computeStats, simplifyTrack } from './web/js/stats.js';
 
 const ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const COL_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
@@ -207,13 +207,17 @@ export class Store {
   }
 
   _stats(row) {
-    if (row.stats && row.stats_count === row.sample_count) return JSON.parse(row.stats);
+    if (row.stats && row.stats_count === row.sample_count) {
+      const cached = JSON.parse(row.stats);
+      if (cached.track) return cached; // older caches have no thumbnail track: recompute
+    }
     const cols = this.columns;
     const sel = STAT_COLS.filter((c) => cols.has(c));
     const rows = this.db.prepare(`SELECT ${sel.map(q).join(',')} FROM samples WHERE session_id = ? ORDER BY seq`).all(row.id);
     const arrays = {};
     for (const c of sel) arrays[c] = rows.map((r) => r[c]);
     const stats = computeStats(arrays);
+    stats.track = simplifyTrack(arrays.lat, arrays.lon); // thumbnail for the session list
     this.db.prepare('UPDATE sessions SET stats = ?, stats_count = ? WHERE id = ?').run(JSON.stringify(stats), row.sample_count, row.id);
     return stats;
   }

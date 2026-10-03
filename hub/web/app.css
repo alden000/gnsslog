@@ -366,10 +366,10 @@ main {
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: 132px minmax(0, 2.2fr) repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: 16px;
-  padding: 14px 16px;
+  padding: 10px 16px 10px 10px;
   border-radius: var(--r-14);
   background: var(--surface-1);
   border: 1px solid var(--hairline);
@@ -378,6 +378,13 @@ main {
 }
 .row:hover {
   background: var(--surface-2);
+}
+.row canvas.mini {
+  display: block;
+  width: 132px;
+  height: 84px;
+  border-radius: var(--r-10);
+  border: 1px solid var(--hairline);
 }
 .row:active {
   transform: scale(0.995);
@@ -798,7 +805,11 @@ dialog h2 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .row {
-    grid-template-columns: minmax(0, 1fr) repeat(2, auto);
+    grid-template-columns: 112px minmax(0, 1fr) repeat(2, auto);
+  }
+  .row canvas.mini {
+    width: 112px;
+    height: 72px;
   }
   .row .num.opt {
     display: none;
@@ -848,7 +859,31 @@ dialog h2 {
     font-size: 17px;
   }
   .row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 88px minmax(0, 1fr) auto;
+    gap: 4px 12px;
+  }
+  /* thumbnail | name + meta | duration over distance */
+  .row > :nth-child(1),
+  .row > :nth-child(2) {
+    grid-row: 1 / span 2;
+  }
+  .row > :nth-child(3) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .row > :nth-child(4) {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .row .num {
+    text-align: right;
+  }
+  .row .num b {
+    font-size: 14px;
+  }
+  .row canvas.mini {
+    width: 88px;
+    height: 64px;
   }
   .row .num.opt2 {
     display: none;

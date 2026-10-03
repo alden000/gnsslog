@@ -64,3 +64,69 @@ export function computeStats(cols, i0 = 0, i1 = (cols.t?.length ?? 0) - 1) {
   if (minLat <= maxLat) out.bbox = [minLat, minLon, maxLat, maxLon];
   return out;
 }
+
+/**
+ * A small version of the track for thumbnails: at most `maxPts` points as a flat
+ * [lat, lon, lat, lon, ...] array (6 decimals, ~0.1 m), simplified with Ramer-Douglas-Peucker
+ * so corners survive and straight runs collapse.
+ */
+export function simplifyTrack(lat, lon, maxPts = 150) {
+  const pts = [];
+  for (let i = 0; i < (lat?.length ?? 0); i++) {
+    const a = num(lat[i]), o = num(lon[i]);
+    if (Number.isFinite(a) && Number.isFinite(o)) pts.push([a, o]);
+  }
+  if (pts.length < 2) return pts.length ? [round6(pts[0][0]), round6(pts[0][1])] : [];
+  // Equirectangular metres around the first point (plenty for a thumbnail).
+  const k = Math.cos((pts[0][0] * Math.PI) / 180) * 111320;
+  let xy = pts.map(([a, o]) => [(o - pts[0][1]) * k, (a - pts[0][0]) * 111320]);
+  let src = pts;
+  if (xy.length > 6000) {
+    const step = Math.ceil(xy.length / 6000);
+    const keep = (_, i) => i % step === 0 || i === xy.length - 1;
+    xy = xy.filter(keep);
+    src = src.filter(keep);
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, y] of xy) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  let eps = Math.max(0.5, Math.hypot(maxX - minX, maxY - minY) / 300);
+  let idx;
+  for (let tries = 0; tries < 12; tries++) {
+    idx = rdp(xy, eps);
+    if (idx.length <= maxPts) break;
+    eps *= 1.6;
+  }
+  const out = [];
+  for (const i of idx) out.push(round6(src[i][0]), round6(src[i][1]));
+  return out;
+}
+
+const round6 = (v) => Math.round(v * 1e6) / 1e6;
+
+function rdp(xy, eps) {
+  const keep = new Uint8Array(xy.length);
+  keep[0] = keep[xy.length - 1] = 1;
+  const stack = [[0, xy.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const [ax, ay] = xy[a], [bx, by] = xy[b];
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    let best = -1, bestD = eps;
+    for (let i = a + 1; i < b; i++) {
+      const [px, py] = xy[i];
+      const d = len > 1e-9 ? Math.abs(dy * px - dx * py + bx * ay - by * ax) / len : Math.hypot(px - ax, py - ay);
+      if (d > bestD) (bestD = d), (best = i);
+    }
+    if (best > 0) {
+      keep[best] = 1;
+      stack.push([a, best], [best, b]);
+    }
+  }
+  const idx = [];
+  for (let i = 0; i < keep.length; i++) if (keep[i]) idx.push(i);
+  return idx;
+}

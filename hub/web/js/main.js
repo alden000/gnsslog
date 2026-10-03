@@ -5,6 +5,8 @@ import { SessionData, LOAD_COLS } from './data.js';
 import { TrackView } from './trackview.js';
 import { Charts, PANELS, DEFAULT_PANELS, fmtClock, fmtElapsed } from './charts.js';
 import { Scrub } from './scrub.js';
+import { drawMiniMap } from './minimap.js';
+import { tileCache } from './trackview.js';
 import { exportImage, download, dataUrl, fmtDateTime, fmtDuration, fmtDistance } from './exporter.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -87,6 +89,7 @@ function applyTheme() {
   track?.set({ pal });
   charts?.set({ pal });
   scrub?.set({ pal });
+  if (!$('#view-list').hidden) drawMinis();
 }
 
 // ------------------------------------------------------------------ state
@@ -123,16 +126,29 @@ function renderList() {
         s.marks ? `<span class="badge">${s.marks} mark${s.marks > 1 ? 's' : ''}</span>` : '',
       ].join('');
       return `<a class="row" role="listitem" href="#/s/${encodeURIComponent(s.id)}">
+        <canvas class="mini" data-id="${esc(s.id)}" aria-hidden="true"></canvas>
         <div><div class="name">${esc(s.name)}</div>
           <div class="meta">${s.startedAt ? esc(fmtDateTime(s.startedAt)) : ''}${s.device ? ` · ${esc(s.device)}` : ''} ${badges}</div></div>
         <div class="num"><b>${fmtDuration(st.duration)}</b><span>Duration</span></div>
         <div class="num"><b>${fmtDistance(st.distance)}</b><span>Distance</span></div>
         <div class="num opt opt2"><b>${st.maxSog == null ? '—' : (st.maxSog * k.k).toFixed(1)}</b><span>Max ${k.label}</span></div>
         <div class="num opt opt2"><b>${(s.sampleCount || 0).toLocaleString()}</b><span>Samples</span></div>
-        <div></div>
       </a>`;
     })
     .join('');
+  drawMinis();
+}
+
+// Thumbnails redraw while their map tiles arrive (a few seconds at most).
+let miniTimer = 0;
+function drawMinis(deadline = Date.now() + 8000) {
+  clearTimeout(miniTimer);
+  const pal = PALETTES[currentTheme()];
+  const byId = new Map(S.list.map((x) => [x.id, x]));
+  for (const c of $$('#list canvas.mini')) {
+    drawMiniMap(c, byId.get(c.dataset.id)?.stats?.track, { pal, layer: prefs.mapLayer, dark: pal.name === 'dark' });
+  }
+  if (prefs.mapLayer !== 'off' && tileCache.pending() && Date.now() < deadline) miniTimer = setTimeout(() => drawMinis(deadline), 300);
 }
 
 async function loadList() {

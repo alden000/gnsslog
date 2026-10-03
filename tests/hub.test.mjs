@@ -216,3 +216,17 @@ test('the ICD example (docs/ICD.md 8.1) is accepted by the reference hub', async
   assert.equal((await post('/ingest', example)).status, 200);
   assert.equal((await (await fetch(`${base}/api/sessions/${example.session.id}`)).json()).sampleCount, 1);
 });
+
+test('session list carries a simplified thumbnail track', async () => {
+  const { simplifyTrack } = await import('../hub/web/js/stats.js');
+  // an L-shaped walk of 2000 points: the corner must survive, the straights collapse
+  const lat = [], lon = [];
+  for (let i = 0; i < 1000; i++) (lat.push(1.3 + i * 1e-6), lon.push(103.8));
+  for (let i = 0; i < 1000; i++) (lat.push(1.300999), lon.push(103.8 + i * 1e-6));
+  const tr = simplifyTrack(lat, lon);
+  assert.ok(tr.length / 2 <= 150 && tr.length / 2 >= 3, `${tr.length / 2} points`);
+  assert.ok(tr.some((v, i) => i % 2 === 0 && Math.abs(v - 1.300999) < 2e-6 && Math.abs(tr[i + 1] - 103.8) < 2e-5), 'corner kept');
+  const list = await (await fetch(`${base}/api/sessions`)).json();
+  const s = list.find((x) => x.id === ID);
+  assert.ok(Array.isArray(s.stats.track) && s.stats.track.length >= 4 && s.stats.track.length <= 300);
+});

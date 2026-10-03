@@ -390,7 +390,7 @@ Cloudflare Access.
 | POST | `/api/import` | Body: a GNSS Log JSON export → `{ ok, session, received, sampleCount }` |
 | GET | `/api/stream` | Server-sent events, one JSON message per change: `{ type: "session", session }` or `{ type: "deleted", id }` |
 
-`stats` = `{ samples, start, end, duration (s), distance (m), maxSog, avgSog (m/s), movingTime (s), bbox [minLat, minLon, maxLat, maxLon], minMarkDist, maxMarkDist }`.
+`stats` = `{ samples, start, end, duration (s), distance (m), maxSog, avgSog (m/s), movingTime (s), bbox [minLat, minLon, maxLat, maxLon], minMarkDist, maxMarkDist, track }`; `track` is a simplified copy of the path for thumbnails, at most ~150 points as a flat `[lat, lon, lat, lon, …]` array.
 
 ## 10. Checklist for implementers
 
