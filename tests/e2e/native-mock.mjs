@@ -61,7 +61,10 @@ try {
         openSettings() { log.calls.push(['openSettings']); return Promise.resolve(); },
       },
       VesselSensors: {
-        addListener(opts, cb) { if (opts.eventName === 'motion') log.listeners.push(cb); },
+        addListener(opts, cb) {
+          if (opts.eventName === 'motion') log.listeners.push(cb);
+          if (opts.eventName === 'service') (log.serviceListeners ||= []).push(cb);
+        },
         start() {
           log.calls.push(['sensors.start']);
           // Flat phone heading 045 (alpha 315): R = Rz(315); gyro quiet. 25 Hz, like the plugin.
@@ -80,7 +83,8 @@ try {
           log.calls.push(['setBackground', enabled]);
           background = enabled;
           if (enabled) log.frames.length = log.fixes.length = 0;
-          return Promise.resolve();
+          // The app's RecordingService starts; set window.__native.noService to test the fallback.
+          return Promise.resolve({ service: enabled && !log.noService });
         },
         ack() { log.acks++; return Promise.resolve(); },
         drain({ sinceT, untilT, max }) {
@@ -157,6 +161,9 @@ try {
   const burstWin = await freeze('burst', 3000); // events delivered late, in one go
   const deadWin = await freeze('dead', 4000); // whole app frozen: nothing to recover
   await freeze('dead', 1500); // a short hiccup is bridged by the filters, not marked as a gap
+  // RecordingService did not reach the foreground: the plugin watcher takes over in background mode.
+  await page.evaluate(() => window.__native.serviceListeners.forEach((cb) => cb({ running: false, error: 'test' })));
+  await sleep(800);
   await page.click('#btn-rec');
   await page.click('[data-act="stop"]');
   await sleep(600);
@@ -211,7 +218,8 @@ try {
   assert.ok(info.calls.some((x) => x[0] === 'drain'), 'catch-up used the native log');
   const c = info.calls.map((x) => x.join(':'));
   assert.ok(c.includes('setBackground:true') && c.includes('setBackground:false'), 'background mode on while recording');
-  assert.ok(c.includes('addWatcher:true'), 'location watcher switched to background mode');
+  const fb = c.indexOf('addWatcher:true');
+  assert.ok(fb > 0 && c.slice(0, fb).filter((x) => x.startsWith('addWatcher')).every((x) => x === 'addWatcher:false'), 'plugin watcher in plain mode while RecordingService runs, background mode after the fallback');
   assert.ok(c.includes('battery'));
   assert.ok(c.includes('appSettings'), 'prompted for "Allow all the time"');
   for (const k of ['tap', 'confirm', 'heavy']) assert.ok(c.includes(`haptic:${k}`), `haptic ${k} on taps`);

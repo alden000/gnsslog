@@ -14,7 +14,7 @@ import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 
-const VERSION = '0.8.8';
+const VERSION = '0.9.0';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -359,7 +359,7 @@ async function catchUp(fromT, toT) {
       fixes: replayedFixes,
       samples: recorder.seq - seq0,
       holes,
-      ...(gnss ? { gnssOn: gnss.on, gnssProvider: gnss.provider, gnssLogged: gnss.logged, gnssLastFixAgoMs: gnss.lastFixAgoMs } : {}),
+      ...(gnss ? { gnssService: gnss.service, gnssOn: gnss.on, gnssProvider: gnss.provider, gnssLogged: gnss.logged, gnssLastFixAgoMs: gnss.lastFixAgoMs, ...(gnss.error ? { gnssError: gnss.error } : {}) } : {}),
     });
   }
   if (replayed) recorder.flush();

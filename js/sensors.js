@@ -68,8 +68,21 @@ export class Sensors extends EventTarget {
   async setBackground(enabled) {
     if (!isNative || !!this.background === enabled) return;
     this.background = enabled;
-    await plugin('VesselSensors').setBackground({ enabled }).catch(() => {});
-    if (this.watchId !== null && this.watchId !== 'pending') this._restartNativeGnss();
+    // The app's own location foreground service (RecordingService) keeps GNSS alive in the
+    // background; the location plugin's watcher then stays in plain mode (one notification).
+    // Without it, the plugin's watcher runs its own background service as before.
+    const r = await plugin('VesselSensors').setBackground({ enabled }).catch(() => null);
+    this.serviceOk = !!(enabled && r?.service);
+    this._applyGnssMode();
+  }
+
+  /** The location plugin's watcher runs its own background service only as a fallback. */
+  get _pluginBackground() {
+    return !!this.background && !this.serviceOk;
+  }
+
+  _applyGnssMode() {
+    if (this.watchId !== null && this.watchId !== 'pending' && this.watchMode !== this._pluginBackground) this._restartNativeGnss();
     // A pending watcher re-checks the mode once it is registered.
   }
 
@@ -83,6 +96,13 @@ export class Sensors extends EventTarget {
   async _startNativeMotion() {
     const vs = plugin('VesselSensors');
     this._setStatus({ orientation: 'waiting', motion: 'waiting' });
+    await vs.addListener('service', (e) => {
+      // RecordingService did not reach the foreground: fall back to the plugin's background mode.
+      if (!e.running && this.serviceOk) {
+        this.serviceOk = false;
+        this._applyGnssMode();
+      }
+    });
     await vs.addListener('motion', (e) => {
       if (e.R && this.status.orientation !== 'ok') this._setStatus({ orientation: 'ok' });
       if (e.gyro && this.status.motion !== 'ok') this._setStatus({ motion: 'ok' });
@@ -100,7 +120,8 @@ export class Sensors extends EventTarget {
 
   _startNativeGnss(attempt = 0) {
     const bg = plugin('BackgroundGeolocation');
-    const background = !!this.background;
+    const background = this._pluginBackground;
+    this.watchMode = background;
     this._setStatus({ gnss: 'waiting' });
     const opts = { requestPermissions: true, stale: false, distanceFilter: 0 };
     if (background) {
@@ -128,7 +149,7 @@ export class Sensors extends EventTarget {
     }).then(
       (id) => {
         this.watchId = id;
-        if (!!this.background !== background) this._restartNativeGnss(); // mode changed meanwhile
+        if (this._pluginBackground !== background) this._restartNativeGnss(); // mode changed meanwhile
       },
       (err) => {
         // The location service binds asynchronously at app start; retry briefly.

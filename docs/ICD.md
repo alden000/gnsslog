@@ -4,7 +4,7 @@
 |---|---|
 | Interface | GNSS Log app → receiving server ("ingest") |
 | Schema identifier | `gnsslog/1` |
-| Document version | 1.0 (2026-10-02), matches app 0.8.4 |
+| Document version | 1.1 (2026-10-03), matches app 0.9.0 |
 | Reference implementations | `hub/server.mjs` + `hub/store.mjs` (SQLite, full), `server/receiver.mjs` (files, minimal) |
 | Conformance tests | `tests/hub.test.mjs` |
 
@@ -190,7 +190,7 @@ reference hub turns every new field into a database column automatically.
 | `mark_active` | same as `mark` | A previously marked location still applies (new session, resumed session, trimmed copy). |
 | `mark_clear` | – | Marked location cleared. |
 | `gap` | `gapMs`, `segment` | Android app: no data at all for this stretch (the whole app was frozen). |
-| `catchup` | `frozenMs`, `frames`, `fixes`, `samples`, `holes`, `gnssOn?`, `gnssProvider?`, `gnssLogged?`, `gnssLastFixAgoMs?` | Android app: data missed by a frozen WebView was recovered from the native log, with the state of the native GNSS listener (diagnostic). |
+| `catchup` | `frozenMs`, `frames`, `fixes`, `samples`, `holes`, `gnssService?`, `gnssOn?`, `gnssProvider?`, `gnssLogged?`, `gnssLastFixAgoMs?`, `gnssError?` | Android app: data missed by a frozen WebView was recovered from the native log, with the state of the native GNSS listener (diagnostic). |
 | `late` | `spanMs`, `maxLagMs`, `frames` | Android app: data arrived late in a burst and was placed at its real time (diagnostic). |
 
 Unknown event types MUST be ignored or stored as they are.
@@ -411,3 +411,4 @@ Cloudflare Access.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-02 | First issue (app 0.8.4). |
+| 1.1 | 2026-10-03 | `device.perm`; GNSS diagnostics on `catchup` events (app 0.9.0). |

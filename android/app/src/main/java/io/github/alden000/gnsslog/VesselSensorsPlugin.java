@@ -39,7 +39,8 @@ import org.json.JSONException;
  * mean angular velocity over the 40 ms window in device axes. The event doubles as a steady clock
  * for the JavaScript logger, whose timers may be throttled while the app is hidden.
  *
- * While recording (setBackground true) it also keeps a native log of the last ~4 hours: sensor
+ * While recording (setBackground true) it starts RecordingService, the app's own location
+ * foreground service (GNSS, wake lock, notification), and keeps a native log of the last ~4 hours: sensor
  * frames at 10 Hz and GNSS fixes. Android can freeze the app's WebView with the screen off even
  * though this service keeps running; when JavaScript wakes up it calls drain() to fetch what it
  * missed and replays it at the original timestamps, so the recording has no hole. If JavaScript
@@ -90,6 +91,27 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     private String gnssError = null;
     private long lastFixWall = 0;
     private volatile long lastAck = 0;
+    private boolean fallback = false; // RecordingService unavailable: GNSS + wake lock here
+    private String serviceError = null;
+
+    /** A moment after starting it: is RecordingService really in the foreground? */
+    private final Runnable serviceCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (!background) return;
+            JSObject e = new JSObject();
+            e.put("running", RecordingService.running);
+            e.put("error", RecordingService.error);
+            if (!RecordingService.running) useFallback();
+            notifyListeners("service", e);
+        }
+    };
+
+    private void useFallback() {
+        fallback = true;
+        acquireWakeLock();
+        startGnss();
+    }
 
     private final Runnable bufferer = new Runnable() {
         @Override
@@ -149,13 +171,35 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     @PluginMethod
     public void setBackground(PluginCall call) {
         background = Boolean.TRUE.equals(call.getBoolean("enabled", false));
-        if (background) acquireWakeLock();
-        else releaseWakeLock();
         if (background && !running) startSensors();
         lastAck = System.currentTimeMillis();
-        if (background) startLog();
-        else stopLog();
-        call.resolve();
+        JSObject ret = new JSObject();
+        if (background) {
+            startLog();
+            // Our own location foreground service owns GNSS + wake lock while recording. If it
+            // cannot run, fall back to doing both here (and tell JavaScript, which then puts the
+            // location plugin's watcher into its own background mode).
+            boolean started = false;
+            try {
+                RecordingService.sink = this::bufferFix;
+                RecordingService.start(getContext());
+                started = true;
+            } catch (Exception e) {
+                serviceError = e.getClass().getSimpleName() + ": " + e.getMessage();
+            }
+            if (!started) useFallback();
+            else if (handler != null) handler.postDelayed(serviceCheck, 2000);
+            ret.put("service", started);
+        } else {
+            if (handler != null) handler.removeCallbacks(serviceCheck);
+            RecordingService.sink = null;
+            RecordingService.stop(getContext());
+            stopLog();
+            releaseWakeLock();
+            fallback = false;
+            ret.put("service", false);
+        }
+        call.resolve(ret);
     }
 
     /** JavaScript is alive (called about once a second); live events flow while it keeps calling. */
@@ -222,11 +266,15 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
             ret.put("fixes", fixes);
             // Diagnostics: is the native GNSS listener running, and when did it last get a fix?
             JSObject g = new JSObject();
-            g.put("on", gnssOn);
-            g.put("provider", gnssProvider);
-            g.put("error", gnssError);
+            boolean svc = RecordingService.running && !fallback;
+            g.put("service", svc);
+            g.put("on", svc ? RecordingService.gnssOn : gnssOn);
+            g.put("provider", svc ? RecordingService.provider : gnssProvider);
+            String err = svc ? RecordingService.error : (gnssError != null ? gnssError : (RecordingService.error != null ? RecordingService.error : serviceError));
+            g.put("error", err);
             g.put("logged", xCount);
-            g.put("lastFixAgoMs", lastFixWall > 0 ? System.currentTimeMillis() - lastFixWall : -1);
+            long lf = Math.max(lastFixWall, RecordingService.lastFixWall);
+            g.put("lastFixAgoMs", lf > 0 ? System.currentTimeMillis() - lf : -1);
             ret.put("gnss", g);
             ret.put("more", more);
             ret.put("oldestT", oldest);
@@ -373,7 +421,7 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         handler.postDelayed(emitter, EMIT_MS);
         if (background && fT != null) {
             handler.postDelayed(bufferer, BUF_MS);
-            startGnss();
+            if (fallback) startGnss();
         }
     }
 
@@ -497,7 +545,6 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
             handler.removeCallbacks(bufferer);
             handler.postDelayed(bufferer, BUF_MS);
         }
-        startGnss();
     }
 
     private void stopLog() {
@@ -528,7 +575,7 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         }
     }
 
-    private void bufferFix(Location l) {
+    void bufferFix(Location l) {
         if (!background || xData == null) return;
         lastFixWall = System.currentTimeMillis();
         synchronized (lock) {
@@ -597,6 +644,8 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
 
     @Override
     protected void handleOnDestroy() {
+        RecordingService.sink = null;
+        RecordingService.stop(getContext());
         stopSensors();
         releaseWakeLock();
         if (thread != null) thread.quitSafely();
