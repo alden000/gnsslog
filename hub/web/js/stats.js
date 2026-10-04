@@ -82,8 +82,9 @@ export function simplifyTrack(lat, lon, maxPts = 150) {
   let xy = pts.map(([a, o]) => [(o - pts[0][1]) * k, (a - pts[0][0]) * 111320]);
   let src = pts;
   if (xy.length > 6000) {
-    const step = Math.ceil(xy.length / 6000);
-    const keep = (_, i) => i % step === 0 || i === xy.length - 1;
+    const n = xy.length; // fixed before filtering: both arrays must keep the same indices
+    const step = Math.ceil(n / 6000);
+    const keep = (_, i) => i % step === 0 || i === n - 1;
     xy = xy.filter(keep);
     src = src.filter(keep);
   }

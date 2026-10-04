@@ -226,6 +226,11 @@ test('session list carries a simplified thumbnail track', async () => {
   const tr = simplifyTrack(lat, lon);
   assert.ok(tr.length / 2 <= 150 && tr.length / 2 >= 3, `${tr.length / 2} points`);
   assert.ok(tr.some((v, i) => i % 2 === 0 && Math.abs(v - 1.300999) < 2e-6 && Math.abs(tr[i + 1] - 103.8) < 2e-5), 'corner kept');
+  // long tracks (> 6000 points) go through a pre-thinning step: it must keep both arrays aligned
+  const la = [], lo = [];
+  for (let i = 0; i < 20000; i++) (la.push(1.3 + Math.sin(i / 900) * 0.01), lo.push(103.8 + i * 1e-6));
+  const long = simplifyTrack(la, lo);
+  assert.ok(long.length / 2 >= 3 && long.length / 2 <= 150 && long.every(Number.isFinite), `long track: ${long.length / 2} points`);
   const list = await (await fetch(`${base}/api/sessions`)).json();
   const s = list.find((x) => x.id === ID);
   assert.ok(Array.isArray(s.stats.track) && s.stats.track.length >= 4 && s.stats.track.length <= 300);
