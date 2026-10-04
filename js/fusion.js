@@ -19,6 +19,13 @@ const DEV_MIN_SPEED = 2.0; // m/s (~4 kn): learn compass deviation only when mak
 const DEV_MAX_TURN = 3; // deg/s: ...and running straight
 const STILL_MAX_SPEED = 0.5; // m/s: GNSS must agree the phone is not moving before a zero-rate update
 const ZERO_RATE_SIGMA = 0.02; // deg/s: floor on the zero-rate bias measurement
+const ZUPT_SIGMA = 0.05; // m/s: lying still also means not moving (zero-velocity update)
+const FIX_DUP_MS = 150; // fixes this close to (or older than) the last applied one are dropped
+const MAX_LATENCY_S = 3; // fixes up to this old are projected to the present with the filter velocity
+const COURSE_LAG_S = 1; // the chipset's course lags the turn by about this much
+const VEL_GATE = 16; // chi-square (2 dof, ~0.03%): a velocity this inconsistent is not used
+const VEL_CHECK_TOL = 2; // m/s: chipset velocity vs fix-to-fix movement, plus a share of the accuracy
+const STILL_POOR_ACC = 15; // m: while still, fixes worse than this barely move the position
 
 export class Fusion extends EventTarget {
   constructor(settings) {
@@ -28,6 +35,8 @@ export class Fusion extends EventTarget {
     this.pkf = new PositionKF();
     this.frame = null;
     this.gnss = null; // last raw fix
+    this.lastFixT = null; // fixT of the last fix applied
+    this.prevFix = null; // { t: fixT, x, y, acc } of the last fix, for the velocity check
     this.att = null; // last { alpha, beta, gamma, t }
     this.magHeadingRaw = null; // last magnetometer heading of the mount (magnetic, deg)
     this.compassT = 0;
@@ -51,27 +60,65 @@ export class Fusion extends EventTarget {
   // ---------------------------------------------------------------- inputs
 
   onGnss(fix) {
+    // The background service and the in-app watcher both deliver the phone's fixes, with
+    // slightly different timestamps: keep one monotonic stream.
+    const fixT = Number.isFinite(fix.fixT) ? fix.fixT : fix.t;
+    if (this.lastFixT !== null && fixT <= this.lastFixT + FIX_DUP_MS) return;
+    this.lastFixT = fixT;
     if (!this.frame) {
       this.frame = new LocalFrame(fix.lat, fix.lon);
       if (this.mark) Object.assign(this.mark, this.frame.toXY(this.mark.lat, this.mark.lon));
       this._emit('frame', { lat: fix.lat, lon: fix.lon });
     }
     this.gnss = fix;
-    const { x, y } = this.frame.toXY(fix.lat, fix.lon);
+    const pkf = this.pkf;
+    // Applied at its arrival (or later, if the filter is already past it), but it describes
+    // where the phone was at fixT: ~1.1 s earlier on the phone's fused provider. Project it to
+    // the present with the filter's velocity, or the track lags and overshoots at every change.
+    const t = pkf.initialized ? Math.max(fix.t, pkf.t) : fix.t;
+    pkf.predict(t);
+    const lag = Math.max(0, (t - fixT) / 1000);
+    let { x, y } = this.frame.toXY(fix.lat, fix.lon);
     const acc = Math.max(fix.acc || 10, 1);
+    const moved = this._fixVelocity(fixT, x, y, acc);
     // Reported accuracy is a ~68% horizontal radius; per-axis 1-sigma is about 0.7 of it.
-    this.pkf.updatePosition(fix.t, x, y, (0.7 * acc) ** 2);
+    let r = (0.7 * acc) ** 2;
+    if (!pkf.initialized) {
+      // Start moving: from the fix's own velocity, projected to the present like any other fix.
+      const c = fix.cog !== null && fix.speed > 0 ? (fix.cog * Math.PI) / 180 : null;
+      const vx = c === null ? 0 : fix.speed * Math.sin(c);
+      const vy = c === null ? 0 : fix.speed * Math.cos(c);
+      const l = Math.min(lag, MAX_LATENCY_S);
+      pkf.init(t, x + vx * l, y + vy * l, r, vx, vy);
+    } else {
+      if (lag > 0) {
+        const l = Math.min(lag, MAX_LATENCY_S);
+        x += pkf.x[2] * l;
+        y += pkf.x[3] * l;
+        r += ((pkf.P[2][2] + pkf.P[3][3]) / 2) * l * l + (lag - l) ** 2; // stale beyond that: ~1 m/s unknown motion
+      }
+      if (t - this.stillT < 3000 && acc > STILL_POOR_ACC) r *= 4; // lying still: Wi-Fi fixes indoors wander by tens of metres
+      pkf.updatePosition(t, x, y, r);
+    }
 
-    if (fix.speed !== null) {
+    if (fix.speed !== null && lag <= MAX_LATENCY_S) {
       // Phone GNSS velocity is smoothed by the chipset; trusting it too much makes the
       // track integrate velocity and drift metres away from the fixes (seen in field logs).
-      const velVar = Math.max(0.5, 0.1 * acc) ** 2;
-      if (fix.speed < 0.3) {
-        this.pkf.updateVelocity(fix.t, 0, 0, Math.max(velVar, 0.3 ** 2));
-      } else if (fix.cog !== null) {
+      // Its course also lags in turns (by ~90 deg at a corner in field logs): allow for the
+      // turn the gyro sees, and drop a velocity that disagrees with the track outright.
+      const turning = t - this.gyroT < GYRO_STALE && this.rateLP !== null ? Math.abs(this.rateLP) : 0;
+      const courseErr = Math.min(turning * (lag + COURSE_LAG_S), 90) * (Math.PI / 180);
+      const velVar = (Math.max(0.5, 0.1 * acc) + 0.05 * fix.speed) ** 2 + (fix.speed * Math.sin(courseErr)) ** 2;
+      let v = null;
+      if (fix.speed < 0.3) v = [0, 0];
+      else if (fix.cog !== null) {
         const c = (fix.cog * Math.PI) / 180;
-        this.pkf.updateVelocity(fix.t, fix.speed * Math.sin(c), fix.speed * Math.cos(c), velVar);
+        v = [fix.speed * Math.sin(c), fix.speed * Math.cos(c)];
       }
+      // Field logs show the course off by ~90 deg for 10 s on a straight road (gyro at zero):
+      // a velocity the fixes themselves contradict is not used.
+      if (v && moved && Math.hypot(v[0] - moved.vx, v[1] - moved.vy) > moved.tol) v = null;
+      if (v) pkf.updateVelocity(t, v[0], v[1], fix.speed < 0.3 ? Math.max(velVar, 0.3 ** 2) : velVar, VEL_GATE);
     }
 
     this._learnDeviation(fix);
@@ -82,6 +129,18 @@ export class Fusion extends EventTarget {
       this.hkf.update(fix.cog, 15 * 15);
       this.headingSource = 'cog';
     }
+  }
+
+  /** Velocity from the previous fix to this one, when both are recent and good enough to judge by. */
+  _fixVelocity(fixT, x, y, acc) {
+    const p = this.prevFix;
+    this.prevFix = { t: fixT, x, y, acc };
+    if (!p) return null;
+    const dt = (fixT - p.t) / 1000;
+    if (!(dt >= 0.5 && dt <= 2.5) || acc > 20 || p.acc > 20) return null;
+    // Consecutive fixes share most of their error, so the movement between them is much
+    // better than either accuracy figure suggests.
+    return { vx: (x - p.x) / dt, vy: (y - p.y) / dt, tol: VEL_CHECK_TOL + (0.2 * (acc + p.acc)) / dt };
   }
 
   _learnDeviation(fix) {
@@ -196,7 +255,11 @@ export class Fusion extends EventTarget {
     if (!z) return;
     const g = this.gnss;
     if (g && t - g.t < 5000 && g.speed !== null && g.speed > STILL_MAX_SPEED) return;
-    if (this.hkf.updateBias(z.mean, z.varMean + ZERO_RATE_SIGMA ** 2)) this.stillT = t;
+    this.stillT = t;
+    // Not turning and not shaking for 10 s, and GNSS does not say otherwise: not moving either.
+    // Without this, sparse indoor fixes 50 m apart give the track a false velocity to coast on.
+    if (this.pkf.initialized) this.pkf.updateVelocity(t, 0, 0, ZUPT_SIGMA ** 2);
+    this.hkf.updateBias(z.mean, z.varMean + ZERO_RATE_SIGMA ** 2);
   }
 
   _propagate(t) {
@@ -213,6 +276,8 @@ export class Fusion extends EventTarget {
     if (this.frame && this.frame.lat0 === lat && this.frame.lon0 === lon) return;
     this.frame = new LocalFrame(lat, lon);
     this.pkf.reset();
+    this.lastFixT = null;
+    this.prevFix = null;
     if (this.mark) Object.assign(this.mark, this.frame.toXY(this.mark.lat, this.mark.lon));
     this._emit('frame', { lat, lon });
   }

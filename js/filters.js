@@ -203,7 +203,18 @@ export class PositionKF {
       return true;
     }
     this.predict(t);
+    const y0 = mx - this.x[0];
+    const y1 = my - this.x[1];
     const ok = this._update([0, 1], [mx, my], r);
+    if (!ok) {
+      // Rejected: leave the state alone (a lone outlier changes nothing) but widen the
+      // uncertainty towards it, so a real change (a turn the velocity missed) is taken up by
+      // the next fix rather than by a jump after several rejects.
+      this.P[0][0] += (y0 * y0) / 4;
+      this.P[1][1] += (y1 * y1) / 4;
+      this.P[2][2] += (y0 * y0) / 16;
+      this.P[3][3] += (y1 * y1) / 16;
+    }
     if (!ok && ++this.rejects >= this.maxRejects) {
       // Consistent large jumps: trust the receiver and restart from it.
       this.init(t, mx, my, r, this.x[2], this.x[3]);
@@ -214,10 +225,10 @@ export class PositionKF {
   }
 
   /** Velocity measurement (m/s) with variance r per axis. */
-  updateVelocity(t, vx, vy, r) {
+  updateVelocity(t, vx, vy, r, gate = Infinity) {
     if (!this.initialized) return false;
     this.predict(t);
-    return this._update([2, 3], [vx, vy], r, Infinity);
+    return this._update([2, 3], [vx, vy], r, gate);
   }
 
   _update(idx, z, r, gate = this.gate) {

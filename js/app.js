@@ -14,7 +14,7 @@ import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);

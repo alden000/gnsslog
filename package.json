@@ -1,6 +1,6 @@
 {
   "name": "gnsslog",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "PWA vessel position/heading logger, with a self-hosted hub and analyser",
   "type": "module",
