@@ -15,10 +15,12 @@
     4. registers the "GNSS Log Hub" scheduled task: starts at boot as SYSTEM, restarts on failure
     5. installs cloudflared and, with -TunnelToken, runs the tunnel as a Windows service
     6. checks http://127.0.0.1:<port>/api/health
+    7. with -AppDir: registers "GNSS Log Hub Updater", which checks GitHub every 5 minutes and
+       updates + restarts the hub by itself (hub\auto-update.ps1; off with -NoAutoUpdate)
 
   From a git checkout:  .\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken ...
   An existing cloudflared service for another tunnel is never replaced unless -ReplaceTunnel is given.
-  Remove the service (data is kept):  .\setup-windows.ps1 -Uninstall
+  Remove the services (data is kept):  .\setup-windows.ps1 -Uninstall
 #>
 #Requires -RunAsAdministrator
 param(
@@ -33,12 +35,14 @@ param(
   [string]$AccessTeam = "",
   [string]$AccessAud = "",
   [switch]$ReplaceTunnel,
+  [switch]$NoAutoUpdate,
   [switch]$Uninstall
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # Invoke-WebRequest is much faster without the progress bar
 $TaskName = "GNSS Log Hub"
+$UpdaterTask = "GNSS Log Hub Updater"
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Refresh-Path {
@@ -52,6 +56,7 @@ if ($Uninstall) {
   Step "Removing the scheduled task (code and data are kept)"
   Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $UpdaterTask -Confirm:$false -ErrorAction SilentlyContinue
   Write-Host "Done. To remove the tunnel service as well: cloudflared service uninstall"
   exit 0
 }
@@ -175,6 +180,24 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 if ($ok) { Write-Host "Hub is running: http://127.0.0.1:$($cfg.port)/" -ForegroundColor Green }
 else { Write-Warning "The hub did not answer. See $data\hub.log, or run it by hand: `"$node`" $nodeArgs" }
+
+# ---------------------------------------------------------------- 4b. automatic updates
+if ($AppDir -and -not $NoAutoUpdate) {
+  Step "Automatic updates"
+  $gitExe = (Get-Command git).Source
+  $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+  $upArgs = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$app\hub\auto-update.ps1`" " +
+    "-AppDir `"$app`" -DataDir `"$data`" -Branch `"$Branch`" -Git `"$gitExe`" -Port $($cfg.port) -TaskName `"$TaskName`""
+  $upAction = New-ScheduledTaskAction -Execute $ps -Argument $upArgs -WorkingDirectory $app
+  $upTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+  $upSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+  Register-ScheduledTask -TaskName $UpdaterTask -Action $upAction -Trigger $upTrigger -Settings $upSettings -Principal $principal -Force | Out-Null
+  Write-Host "Checks GitHub every 5 minutes and updates + restarts the hub by itself. Log: $data\update.log" -ForegroundColor Green
+} elseif (Get-ScheduledTask -TaskName $UpdaterTask -ErrorAction SilentlyContinue) {
+  Unregister-ScheduledTask -TaskName $UpdaterTask -Confirm:$false
+  Write-Host "Automatic updates turned off."
+}
 
 # ---------------------------------------------------------------- 5. Cloudflare Tunnel
 Step "Cloudflare Tunnel"

@@ -70,6 +70,12 @@ restart if it stops. At the end it prints the phone settings. Run the same comma
 .\setup-windows.ps1 -AppDir D:\GIT\gnsslog -TunnelToken "…" -AccessTeam "…" -AccessAud "…"
 ```
 
+From a git checkout the installer also registers **GNSS Log Hub Updater**: every 5 minutes it
+fetches the branch and, when there are new commits, fast-forwards, restarts the hub and checks
+`/api/health`. If the hub does not come back it returns to the previous commit and skips the bad
+one until a newer commit arrives. A checkout with local changes is never touched. Log:
+`<data>\update.log`. Turn it off with `-NoAutoUpdate`.
+
 **Already running a Cloudflare tunnel on this PC for something else?** Add the public hostname
 `logs.wwweeeiii.com` → `http://localhost:8787` to *that* tunnel and run the installer without
 `-TunnelToken`. The installer never replaces another tunnel's service unless you pass
@@ -179,4 +185,4 @@ Config keys / environment variables: `port`/`HUB_PORT` (8787), `host`/`HUB_HOST`
 | Browser shows "Cloudflare Access is not configured on the hub" | Re-run the installer with `-AccessTeam` and `-AccessAud` (step 2). |
 | Browser shows "Log in through Cloudflare Access" | The Access application for `logs.…` is missing, or its AUD differs from the one given to the installer. |
 | `502` / `1033` from Cloudflare | Hub or tunnel not running: Task Scheduler → *GNSS Log Hub*; `Get-Service cloudflared`; `C:\GNSSLog\data\hub.log`. |
-| Nothing new after an update | Re-run the installer, then reload the Analyzer (it updates on the next visit). |
+| Nothing new after an update | Git checkout: see `<data>\update.log` (updates arrive within 5 minutes). Otherwise re-run the installer. Then reload the Analyzer (it updates on the next visit). |
