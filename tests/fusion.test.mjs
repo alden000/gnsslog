@@ -105,3 +105,43 @@ test('indoors, lying still: sparse Wi-Fi fixes tens of metres apart do not send 
   assert.ok(maxSpeed < 0.5, `speed while still ${maxSpeed.toFixed(2)} m/s`);
   assert.ok(span < 25, `track wandered ${span.toFixed(1)} m`);
 });
+
+function outageTurn(steer) {
+  // 8 m/s east; fixes stop for 8 s while the car turns 90 deg to starboard (11.25 deg/s), then
+  // resume heading south. Phone flat in a mount: gyro z (gamma) -rate = turning to starboard.
+  const f = new Fusion(settings);
+  if (!steer) f._steer = () => {};
+  f.att = { up: [0, 0, 1] };
+  const v = 8, rate = 11.25;
+  let x = 0, y = 0, hdg = 90, t = 1e6, fixDue = t, err = null;
+  for (let i = 0; i < 30 * 50; i++) {
+    t += 20;
+    const turning = t > 1e6 + 10000 && t <= 1e6 + 18000;
+    if (turning) hdg += rate * 0.02;
+    x += v * Math.sin((hdg * Math.PI) / 180) * 0.02;
+    y += v * Math.cos((hdg * Math.PI) / 180) * 0.02;
+    f.onMotion({ t, rot: { alpha: 0, beta: 0, gamma: turning ? -rate : 0 } });
+    if (t >= fixDue) {
+      fixDue += 1000;
+      if (t > 1e6 + 10000 && t <= 1e6 + 18000) continue; // outage
+      if (err === null && t > 1e6 + 18000) err = offAt(f, t, x, y); // first fix after it, before applying
+      f.onGnss({ t, fixT: t, ...at(x, y), acc: 4, speed: v, cog: hdg });
+    }
+  }
+  return err;
+}
+
+test('GNSS outage in a turn (car park ramp, tunnel): the gyro steers the coasting track', () => {
+  const steered = outageTurn(true), straight = outageTurn(false);
+  assert.ok(straight > 25, `straight-line coasting misses by ${straight.toFixed(1)} m`);
+  assert.ok(steered < 5, `steered track misses by ${steered.toFixed(1)} m`);
+});
+
+test('no gyro steering after Wi-Fi-only positions (no GNSS speed): nothing to steer', () => {
+  const f = new Fusion(settings);
+  f.onGnss({ t: 1e6, fixT: 1e6, ...at(0, 0), acc: 20, speed: null, cog: null });
+  f.pkf.x[2] = 3; // a velocity picked up from wandering fixes
+  f.steerT = 1e6 + 1900;
+  f._steer(1e6 + 2000, 30);
+  assert.equal(f.pkf.x[2], 3);
+});

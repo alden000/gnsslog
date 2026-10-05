@@ -25,7 +25,12 @@ const MAX_LATENCY_S = 3; // fixes up to this old are projected to the present wi
 const COURSE_LAG_S = 1; // the chipset's course lags the turn by about this much
 const VEL_GATE = 16; // chi-square (2 dof, ~0.03%): a velocity this inconsistent is not used
 const VEL_CHECK_TOL = 2; // m/s: chipset velocity vs fix-to-fix movement, plus a share of the accuracy
-const STILL_POOR_ACC = 15; // m: while still, fixes worse than this barely move the position
+const STILL_POOR_ACC = 15;
+const STEER_AFTER_MS = 1500; // no usable fix for this long: steer the coasting track with the gyro
+const STEER_MAX_MS = 20000; // ...but not beyond this (gyro and speed both drift)
+const STEER_MIN_SPEED = 1.5; // m/s: driving, not a phone turning in the hand
+const STEER_RATE_SIGMA = 1; // deg/s: assumed error of the gyro rate of turn while steering
+const STEER_FIX_ACC = 30; // m: fixes worse than this (car parks, tunnels) do not count as fixes here // m: while still, fixes worse than this barely move the position
 
 export class Fusion extends EventTarget {
   constructor(settings) {
@@ -37,6 +42,11 @@ export class Fusion extends EventTarget {
     this.gnss = null; // last raw fix
     this.lastFixT = null; // fixT of the last fix applied
     this.prevFix = null; // { t: fixT, x, y, acc } of the last fix, for the velocity check
+    this.goodFixT = 0; // data time the last usable fix was applied (gyro steering in between)
+    this.steerT = 0; // last gyro steering step
+    this.steerOk = false; // the last usable fix said we were driving
+    this.turn = 0; // gyro heading change since that fix, deg
+    this.steered = 0; // ...of which already applied to the velocity
     this.att = null; // last { alpha, beta, gamma, t }
     this.magHeadingRaw = null; // last magnetometer heading of the mount (magnetic, deg)
     this.compassT = 0;
@@ -121,6 +131,13 @@ export class Fusion extends EventTarget {
       if (v) pkf.updateVelocity(t, v[0], v[1], fix.speed < 0.3 ? Math.max(velVar, 0.3 ** 2) : velVar, VEL_GATE);
     }
 
+    // Steering needs a real GNSS fix (it reports a speed; Wi-Fi positions indoors do not) that
+    // says we were driving just before the fixes stopped.
+    if (acc <= STEER_FIX_ACC && fix.speed !== null) {
+      this.goodFixT = t;
+      this.steerOk = fix.speed > STEER_MIN_SPEED;
+      this.turn = this.steered = 0;
+    }
     this._learnDeviation(fix);
 
     // Course over ground as a heading fallback when there is no magnetometer.
@@ -244,9 +261,34 @@ export class Fusion extends EventTarget {
     this.hkf.propagate(m.t, rate);
     this._zeroRate(m.t, rate);
     const corrected = rate - (this.hkf.initialized ? this.hkf.bias : 0);
+    this._steer(m.t, corrected);
     const tau = Math.max(0.05, this.settings.get('rateSmoothing'));
     if (this.rateLP === null || !(dt > 0) || dt > 1) this.rateLP = corrected;
     else this.rateLP += (1 - Math.exp(-dt / tau)) * (corrected - this.rateLP);
+  }
+
+  /**
+   * GNSS outage while driving (car park ramps, tunnels): the position filter would carry on in a
+   * straight line at the last velocity. Turn that velocity with the gyro's rate of turn instead
+   * (deg/s, clockwise positive), so the coasting track follows the turns.
+   */
+  _steer(t, rate) {
+    const dt = this.steerT ? (t - this.steerT) / 1000 : 0;
+    this.steerT = t;
+    if (!(dt > 0) || dt > 0.5) return;
+    this.turn += rate * dt; // deg turned since the last usable fix
+    const pkf = this.pkf;
+    if (!pkf.initialized || !this.goodFixT || !this.steerOk) return;
+    const gap = t - this.goodFixT;
+    if (gap < STEER_AFTER_MS || gap > STEER_MAX_MS) return;
+    if (Math.hypot(pkf.x[2], pkf.x[3]) < STEER_MIN_SPEED) return;
+    pkf.predict(t); // the distance so far was covered on the old course
+    // Catch up on the whole turn since the fix (the first step includes the wait), then follow it.
+    const d = this.turn - this.steered;
+    this.steered = this.turn;
+    // ~1 deg/s of rate error (bias, mounting) becomes speed x that much sideways velocity error.
+    const v = Math.hypot(pkf.x[2], pkf.x[3]);
+    pkf.rotateVelocity(d * (Math.PI / 180), (v * STEER_RATE_SIGMA * (Math.PI / 180)) ** 2 * dt);
   }
 
   /** Lying still: the mean gyro rate is the bias, so feed it to the heading filter directly. */
@@ -278,6 +320,7 @@ export class Fusion extends EventTarget {
     this.pkf.reset();
     this.lastFixT = null;
     this.prevFix = null;
+    this.goodFixT = 0;
     if (this.mark) Object.assign(this.mark, this.frame.toXY(this.mark.lat, this.mark.lon));
     this._emit('frame', { lat, lon });
   }

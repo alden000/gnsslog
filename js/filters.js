@@ -224,6 +224,25 @@ export class PositionKF {
     return ok;
   }
 
+  /**
+   * Turn the velocity by d radians (clockwise, as a heading change) and add variance q per
+   * velocity axis. The covariance is rotated with it: rotating the velocity alone leaves the
+   * filter's correlations pointing the old way, and the next fixes pump up the speed instead.
+   */
+  rotateVelocity(d, q = 0) {
+    if (!this.initialized) return;
+    const c = Math.cos(d), s = Math.sin(d);
+    // G = diag(I2, [[c, s], [-s, c]]); x' = G x; P' = G P G' + Q
+    const G = identity(4, 1);
+    G[2][2] = c; G[2][3] = s; G[3][2] = -s; G[3][3] = c;
+    const [vx, vy] = [this.x[2], this.x[3]];
+    this.x[2] = c * vx + s * vy;
+    this.x[3] = -s * vx + c * vy;
+    this.P = mul(mul(G, this.P), transpose(G));
+    this.P[2][2] += q;
+    this.P[3][3] += q;
+  }
+
   /** Velocity measurement (m/s) with variance r per axis. */
   updateVelocity(t, vx, vy, r, gate = Infinity) {
     if (!this.initialized) return false;

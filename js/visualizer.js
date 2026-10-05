@@ -166,7 +166,7 @@ export class Visualizer {
   /**
    * frame: {
    *   vessel: { x, y, hdg, acc, vx, vy } | null,
-   *   trail: [{ x, y }],             // oldest first
+   *   trail: [{ x, y, poor }],       // oldest first; poor: no proper GNSS (drawn dashed)
    *   sky: { x, y, dist } | null,
    *   headingUp: boolean,
    * }
@@ -225,7 +225,8 @@ export class Visualizer {
     if (this.onMap) this._drawMap(frame, center, rot);
     this._drawRings(cx, cy, R, rot);
 
-    // Breadcrumbs: oldest fade out, newest brightest.
+    // Breadcrumbs: oldest fade out, newest brightest. Stretches without proper GNSS (car parks,
+    // tunnels, indoors) are drawn thin and dashed, so they do not read as real movement.
     const tr = frame.trail;
     if (tr.length > 1) {
       ctx.lineCap = 'round';
@@ -236,22 +237,29 @@ export class Visualizer {
       for (let s = 0; s < segs; s++) {
         const a = s * per, b = Math.min(tr.length - 1, (s + 1) * per);
         if (b <= a) continue;
-        ctx.globalAlpha = 0.15 + 0.85 * ((s + 1) / segs) ** 1.6;
-        ctx.lineWidth = 1.5 + 1.5 * ((s + 1) / segs);
-        ctx.beginPath();
-        let pen = false; // null entries mark gaps (app was in the background)
-        for (let i = a; i <= b; i++) {
-          if (!tr[i]) {
-            pen = false;
-            continue;
+        const k = (s + 1) / segs;
+        for (const poorPass of [false, true]) {
+          ctx.globalAlpha = (0.15 + 0.85 * k ** 1.6) * (poorPass ? 0.6 : 1);
+          ctx.lineWidth = poorPass ? 1.5 : 1.5 + 1.5 * k;
+          ctx.setLineDash(poorPass ? [4, 5] : []);
+          ctx.beginPath();
+          // null entries mark gaps (app was in the background); a link is poor if either end is
+          // (links are joined into one path while they continue, so the dashes run on)
+          let pen = false;
+          for (let i = Math.max(a, 1); i <= b; i++) {
+            const p0 = tr[i - 1], p1 = tr[i];
+            if (!p0 || !p1 || !!(p0.poor || p1.poor) !== poorPass) {
+              pen = false;
+              continue;
+            }
+            if (!pen) ctx.moveTo(...toScreen(p0.x, p0.y));
+            ctx.lineTo(...toScreen(p1.x, p1.y));
+            pen = true;
           }
-          const [px, py] = toScreen(tr[i].x, tr[i].y);
-          if (pen) ctx.lineTo(px, py);
-          else ctx.moveTo(px, py);
-          pen = true;
+          ctx.stroke();
         }
-        ctx.stroke();
       }
+      ctx.setLineDash([]);
       ctx.globalAlpha = 1;
     }
 

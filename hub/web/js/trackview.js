@@ -4,6 +4,7 @@
 
 import { MAP_SOURCES, SEAMARKS, TileCache, drawTileLayer } from '../../../js/maptiles.js';
 import { CanvasPainter } from './painter.js';
+import { isPoor } from '../../../js/quality.js';
 
 const SPEED_BINS = 8;
 export const tileCache = new TileCache();
@@ -100,8 +101,29 @@ export function drawTrackScene(p, s) {
     }
   }
 
-  // The (selected) track.
-  const main = toPts(i0, i1);
+  // The (selected) track. Stretches without proper GNSS (car parks, tunnels, indoors) are drawn
+  // thin and dashed, so they do not read as real movement; a link is poor if either end is.
+  const poor = (i) => isPoor(data.cols.gnssAcc?.[i], data.cols.posSigma?.[i]);
+  const linkPoor = (i) => poor(i - 1) || poor(i);
+  // Points of the links in [a, b] that are (not) poor, as polylines broken by NaN.
+  const links = (a, b, wantPoor) => {
+    const pts = [];
+    let pen = false;
+    for (let i = a + 1; i <= b; i++) {
+      if (data.isGap(i) || linkPoor(i) !== wantPoor) {
+        pen = false;
+        continue;
+      }
+      if (!pen) {
+        if (pts.length) pts.push(NaN, NaN);
+        pts.push(sx(data.px[i - 1]), sy(data.py[i - 1]));
+      }
+      pts.push(sx(data.px[i]), sy(data.py[i]));
+      pen = true;
+    }
+    return pts;
+  };
+  const main = links(i0, i1, false);
   if (halo) p.poly(main, halo);
   if (s.colorBy === 'speed' && data.cols.sog) {
     const [lo, hi] = speedRange(data, i0, i1);
@@ -111,14 +133,7 @@ export function drawTrackScene(p, s) {
     };
     // Consecutive points of the same speed bin go into one path (keeps SVGs small).
     let start = i0, b = bin(i0);
-    const flush = (end) => {
-      const pts = [];
-      for (let i = start; i <= end; i++) {
-        if (i > start && data.isGap(i)) pts.push(NaN, NaN);
-        pts.push(sx(data.px[i]), sy(data.py[i]));
-      }
-      p.poly(pts, { stroke: pal.ramp[b], width: 3 });
-    };
+    const flush = (end) => p.poly(links(start, end, false), { stroke: pal.ramp[b], width: 3 });
     for (let i = i0 + 1; i <= i1; i++) {
       const bi = bin(i);
       if (bi !== b) {
@@ -131,6 +146,8 @@ export function drawTrackScene(p, s) {
   } else {
     p.poly(main, { stroke: pal.trail, width: 2.5 });
   }
+  const weak = links(i0, i1, true);
+  if (weak.length) p.poly(weak, { stroke: onMap ? pal.text : pal.text2, width: 1.5, dash: [4, 4], alpha: 0.75 });
 
   // Start / end of the (selected) track.
   const firstPos = (a, b, dir) => {

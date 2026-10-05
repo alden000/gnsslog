@@ -13,8 +13,9 @@ import { LocalFrame, wrap180, wrap360, haversine } from './geo.js';
 import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
+import { isPoor } from './quality.js';
 
-const VERSION = '0.9.1';
+const VERSION = '0.9.2';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -184,7 +185,7 @@ function sampleAt(t, live) {
   s.origin = origin;
   lastState = s;
   if (s.hasFix) {
-    trail.push({ x: s.x, y: s.y });
+    trail.push({ x: s.x, y: s.y, poor: isPoor(s.acc, s.posSigma) });
     const cap = trailCap();
     if (trail.length > cap) trail.splice(0, trail.length - cap);
   }
@@ -994,7 +995,7 @@ async function openPlayback(id) {
   const frame = new LocalFrame(first.lat, first.lon);
   pb.session = session;
   pb.samples = samples;
-  pb.pts = samples.map((s) => (isNum(s.lat) ? frame.toXY(s.lat, s.lon) : null));
+  pb.pts = samples.map((s) => (isNum(s.lat) ? { ...frame.toXY(s.lat, s.lon), poor: isPoor(s.gnssAcc, s.posSigma) } : null));
   pb.frame = frame;
   // Marked-location timeline: [{ t, spot | null }]
   pb.sky = session.events
