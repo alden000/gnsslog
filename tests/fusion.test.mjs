@@ -145,3 +145,44 @@ test('no gyro steering after Wi-Fi-only positions (no GNSS speed): nothing to st
   f._steer(1e6 + 2000, 30);
   assert.equal(f.pkf.x[2], 3);
 });
+
+test('cornering with fixes every second: the track is a smooth curve, not a polygon of kinks', () => {
+  // Field logs: between fixes the track ran straight, then each fix bent it by 30-80 deg. The
+  // gyro now curves the prediction, the lagging course is not used in turns, and each fix's
+  // correction is blended in.
+  const f = new Fusion(settings);
+  f.att = { up: [0, 0, 1] };
+  const v = 7, rate = 20; // deg/s: a 90 deg corner in 4.5 s
+  let x = 0, y = 0, hdg = 90, t = 1e6, fixDue = t;
+  const pts = [], hist = [], queue = [];
+  for (let i = 0; i < 20 * 50; i++) {
+    t += 20;
+    const turning = t > 1e6 + 6000 && t <= 1e6 + 10500;
+    if (turning) hdg += rate * 0.02;
+    x += v * Math.sin((hdg * Math.PI) / 180) * 0.02;
+    y += v * Math.cos((hdg * Math.PI) / 180) * 0.02;
+    f.onMotion({ t, rot: { alpha: 0, beta: 0, gamma: turning ? -rate : 0 } });
+    hist.push(hdg);
+    if (t >= fixDue) {
+      fixDue += 1000;
+      // delivered 1.1 s late, with its own timestamp, like the phone's fused provider; its
+      // course lags the turn by ~1.5 s (chipset smoothing, seen in the field logs)
+      const cog = hist[Math.max(0, hist.length - 75)];
+      queue.push({ t: t + 1100, fixT: t, ...at(x, y), acc: 4, speed: v, cog });
+    }
+    while (queue.length && t >= queue[0].t) f.onGnss(queue.shift());
+    if (i % 10 === 0 && f.frame) {
+      const s = f.state(t);
+      pts.push(f.frame.toXY(s.lat, s.lon));
+    }
+  }
+  let worst = 0;
+  for (let i = 32; i < pts.length - 1; i++) {
+    const h1 = Math.atan2(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    const h2 = Math.atan2(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    const k = Math.abs((((h2 - h1) * 180) / Math.PI + 540) % 360 - 180);
+    worst = Math.max(worst, k);
+  }
+  // a 20 deg/s turn sampled at 5 Hz bends 4 deg per step (0.9.2: 85 deg)
+  assert.ok(worst < 8, `sharpest kink ${worst.toFixed(1)} deg`);
+});

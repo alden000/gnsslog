@@ -23,13 +23,17 @@ const ZUPT_SIGMA = 0.05; // m/s: lying still also means not moving (zero-velocit
 const FIX_DUP_MS = 150; // fixes this close to (or older than) the last applied one are dropped
 const MAX_LATENCY_S = 3; // fixes up to this old are projected to the present with the filter velocity
 const COURSE_LAG_S = 1; // the chipset's course lags the turn by about this much
+const TURN_SPEED_ONLY = 5; // deg/s: turning faster than this, the course is not used (speed only)
+const TURN_MEM_S = 2; // s: ...and keeps catching up for about this long after the turn ends
 const VEL_GATE = 16; // chi-square (2 dof, ~0.03%): a velocity this inconsistent is not used
 const VEL_CHECK_TOL = 2; // m/s: chipset velocity vs fix-to-fix movement, plus a share of the accuracy
 const STILL_POOR_ACC = 15;
-const STEER_AFTER_MS = 1500; // no usable fix for this long: steer the coasting track with the gyro
+const STEER_AFTER_MS = 0; // steer the predicted track with the gyro from the start (corners, outages)
 const STEER_MAX_MS = 20000; // ...but not beyond this (gyro and speed both drift)
 const STEER_MIN_SPEED = 1.5; // m/s: driving, not a phone turning in the hand
 const STEER_RATE_SIGMA = 1; // deg/s: assumed error of the gyro rate of turn while steering
+const SNAP_TAU_MS = 300; // ms: a fix's correction is blended into the output over ~this, not in one step
+const SNAP_MAX = 15; // m: bigger corrections are real jumps (reacquisition) and are shown at once
 const STEER_FIX_ACC = 30; // m: fixes worse than this (car parks, tunnels) do not count as fixes here // m: while still, fixes worse than this barely move the position
 
 export class Fusion extends EventTarget {
@@ -40,12 +44,15 @@ export class Fusion extends EventTarget {
     this.pkf = new PositionKF();
     this.frame = null;
     this.gnss = null; // last raw fix
+    this.snap = null; // { t, dx, dy }: output offset blending out the last fix's correction
     this.lastFixT = null; // fixT of the last fix applied
     this.prevFix = null; // { t: fixT, x, y, acc } of the last fix, for the velocity check
     this.goodFixT = 0; // data time the last usable fix was applied (gyro steering in between)
     this.steerT = 0; // last gyro steering step
     this.steerOk = false; // the last usable fix said we were driving
     this.turn = 0; // gyro heading change since that fix, deg
+    this._steerAfter = STEER_AFTER_MS;
+    this._snapTau = SNAP_TAU_MS;
     this.steered = 0; // ...of which already applied to the velocity
     this.att = null; // last { alpha, beta, gamma, t }
     this.magHeadingRaw = null; // last magnetometer heading of the mount (magnetic, deg)
@@ -53,6 +60,9 @@ export class Fusion extends EventTarget {
     this.gyroT = 0;
     this.gyroRate = null; // last raw heading rate from the gyro, deg/s
     this.rateLP = null; // low-pass filtered, bias-corrected rate of turn, deg/s
+    this.turnMem = 0; // recent peak |rate of turn|, deg/s
+    this.yaw = 0; // integrated gyro heading, deg (only differences matter)
+    this.yawHist = []; // [t, yaw] over the last 4 s
     this.headingSource = 'none'; // compass | cog | gyro | none
     this.iosAlphaOffset = null; // iOS: alpha is not north-referenced; offset from compass
     this.mark = null; // { lat, lon, x, y, t, acc }
@@ -103,12 +113,18 @@ export class Fusion extends EventTarget {
     } else {
       if (lag > 0) {
         const l = Math.min(lag, MAX_LATENCY_S);
-        x += pkf.x[2] * l;
-        y += pkf.x[3] * l;
+        // Along the arc the gyro saw since fixT, not a straight line: on the mid-way course.
+        const back = (-this._turnSince(t - l * 1000) / 2) * (Math.PI / 180);
+        const c = Math.cos(back), sn = Math.sin(back);
+        x += (c * pkf.x[2] + sn * pkf.x[3]) * l;
+        y += (-sn * pkf.x[2] + c * pkf.x[3]) * l;
         r += ((pkf.P[2][2] + pkf.P[3][3]) / 2) * l * l + (lag - l) ** 2; // stale beyond that: ~1 m/s unknown motion
       }
       if (t - this.stillT < 3000 && acc > STILL_POOR_ACC) r *= 4; // lying still: Wi-Fi fixes indoors wander by tens of metres
+      const before = this._snapOffset(t);
+      const [bx, by] = [pkf.x[0] + before.dx, pkf.x[1] + before.dy];
       pkf.updatePosition(t, x, y, r);
+      this._holdSnap(t, bx, by);
     }
 
     if (fix.speed !== null && lag <= MAX_LATENCY_S) {
@@ -116,7 +132,8 @@ export class Fusion extends EventTarget {
       // track integrate velocity and drift metres away from the fixes (seen in field logs).
       // Its course also lags in turns (by ~90 deg at a corner in field logs): allow for the
       // turn the gyro sees, and drop a velocity that disagrees with the track outright.
-      const turning = t - this.gyroT < GYRO_STALE && this.rateLP !== null ? Math.abs(this.rateLP) : 0;
+      // the course still lags for a second or two after the turn ends: use the recent turning
+      const turning = t - this.gyroT < GYRO_STALE ? this.turnMem : 0;
       const courseErr = Math.min(turning * (lag + COURSE_LAG_S), 90) * (Math.PI / 180);
       const velVar = (Math.max(0.5, 0.1 * acc) + 0.05 * fix.speed) ** 2 + (fix.speed * Math.sin(courseErr)) ** 2;
       let v = null;
@@ -128,7 +145,17 @@ export class Fusion extends EventTarget {
       // Field logs show the course off by ~90 deg for 10 s on a straight road (gyro at zero):
       // a velocity the fixes themselves contradict is not used.
       if (v && moved && Math.hypot(v[0] - moved.vx, v[1] - moved.vy) > moved.tol) v = null;
-      if (v) pkf.updateVelocity(t, v[0], v[1], fix.speed < 0.3 ? Math.max(velVar, 0.3 ** 2) : velVar, VEL_GATE);
+      // In and just after a turn the course lags by tens of degrees and drags the track back
+      // (it finished corners ~15 deg short, then caught up with 2 m jumps). There only the speed
+      // is used, on the filter's own course; the gyro and the positions handle the direction.
+      const fv = Math.hypot(pkf.x[2], pkf.x[3]);
+      if (v && fix.speed >= 0.3 && turning > TURN_SPEED_ONLY && fv > 0.5) v = [(pkf.x[2] / fv) * fix.speed, (pkf.x[3] / fv) * fix.speed];
+      if (v) {
+        const before = this._snapOffset(t);
+        const [bx, by] = [pkf.x[0] + before.dx, pkf.x[1] + before.dy];
+        pkf.updateVelocity(t, v[0], v[1], fix.speed < 0.3 ? Math.max(velVar, 0.3 ** 2) : velVar, VEL_GATE);
+        this._holdSnap(t, bx, by);
+      }
     }
 
     // Steering needs a real GNSS fix (it reports a speed; Wi-Fi positions indoors do not) that
@@ -146,6 +173,33 @@ export class Fusion extends EventTarget {
       this.hkf.update(fix.cog, 15 * 15);
       this.headingSource = 'cog';
     }
+  }
+
+  /**
+   * A fix moves the filter's position in one go, which draws a kink every second in corners.
+   * The output keeps the position where it was and lets the difference decay over ~0.5 s;
+   * the filter itself is unchanged. Large corrections (reacquiring after an outage) show at once.
+   */
+  _holdSnap(t, bx, by) {
+    const dx = bx - this.pkf.x[0], dy = by - this.pkf.x[1];
+    this.snap = Math.hypot(dx, dy) > SNAP_MAX ? null : { t, dx, dy };
+  }
+
+  /** Remaining output offset at t. */
+  _snapOffset(t) {
+    const s = this.snap;
+    if (!s || t < s.t) return { dx: 0, dy: 0 };
+    const k = Math.exp(-(t - s.t) / this._snapTau);
+    return { dx: s.dx * k, dy: s.dy * k };
+  }
+
+  /** Gyro heading change (deg, clockwise) from time t0 until now, from the last few seconds. */
+  _turnSince(t0) {
+    const h = this.yawHist;
+    if (!h.length || t0 >= h[h.length - 1][0]) return 0;
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1][0] > t0) i--;
+    return h[h.length - 1][1] - h[Math.max(0, i - 1)][1];
   }
 
   /** Velocity from the previous fix to this one, when both are recent and good enough to judge by. */
@@ -262,6 +316,13 @@ export class Fusion extends EventTarget {
     this._zeroRate(m.t, rate);
     const corrected = rate - (this.hkf.initialized ? this.hkf.bias : 0);
     this._steer(m.t, corrected);
+    // |rate of turn| over the last ~2 s (decaying peak), for how far the chipset course may lag
+    if (dt > 0 && dt <= 1) {
+      this.yaw += corrected * dt;
+      this.yawHist.push([m.t, this.yaw]);
+      while (this.yawHist.length && m.t - this.yawHist[0][0] > 4000) this.yawHist.shift();
+    }
+    this.turnMem = dt > 0 && dt <= 1 ? Math.max(Math.abs(corrected), this.turnMem * Math.exp(-dt / TURN_MEM_S)) : Math.abs(corrected);
     const tau = Math.max(0.05, this.settings.get('rateSmoothing'));
     if (this.rateLP === null || !(dt > 0) || dt > 1) this.rateLP = corrected;
     else this.rateLP += (1 - Math.exp(-dt / tau)) * (corrected - this.rateLP);
@@ -280,7 +341,7 @@ export class Fusion extends EventTarget {
     const pkf = this.pkf;
     if (!pkf.initialized || !this.goodFixT || !this.steerOk) return;
     const gap = t - this.goodFixT;
-    if (gap < STEER_AFTER_MS || gap > STEER_MAX_MS) return;
+    if (gap < this._steerAfter || gap > STEER_MAX_MS) return;
     if (Math.hypot(pkf.x[2], pkf.x[3]) < STEER_MIN_SPEED) return;
     pkf.predict(t); // the distance so far was covered on the old course
     // Catch up on the whole turn since the fix (the first step includes the wait), then follow it.
@@ -318,6 +379,7 @@ export class Fusion extends EventTarget {
     if (this.frame && this.frame.lat0 === lat && this.frame.lon0 === lon) return;
     this.frame = new LocalFrame(lat, lon);
     this.pkf.reset();
+    this.snap = null;
     this.lastFixT = null;
     this.prevFix = null;
     this.goodFixT = 0;
@@ -401,11 +463,12 @@ export class Fusion extends EventTarget {
       markSpot: this.mark ? { lat: this.mark.lat, lon: this.mark.lon } : null,
     };
     if (hasFix) {
-      out.x = p.x;
-      out.y = p.y;
+      const o = this._snapOffset(t);
+      out.x = p.x + o.dx;
+      out.y = p.y + o.dy;
       out.vx = p.vx;
       out.vy = p.vy;
-      const ll = this.frame.toLatLon(p.x, p.y);
+      const ll = this.frame.toLatLon(out.x, out.y);
       out.lat = ll.lat;
       out.lon = ll.lon;
       out.sog = Math.hypot(p.vx, p.vy);
