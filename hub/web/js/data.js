@@ -3,12 +3,13 @@
 
 import { LocalFrame } from '../../../js/geo.js';
 import { computeStats } from './stats.js';
+import { cleanFixes, smoothTrack, lineAt } from '../../../js/trackline.js';
 
 /** Columns the analyser loads (the full set stays on the server for exports). */
 export const LOAD_COLS = [
   't', 'segment', 'lat', 'lon', 'vx', 'vy', 'sog', 'cog',
   'hdg', 'hdgRate', 'hdgSigma', 'gyroRate', 'gyroBias', 'compass', 'compassDev', 'pitch', 'roll',
-  'posSigma', 'gnssAcc', 'gnssSpeed', 'gnssCog', 'gnssNew',
+  'posSigma', 'gnssAcc', 'gnssSpeed', 'gnssCog', 'gnssNew', 'gnssT', 'gnssLat', 'gnssLon',
   'markActive', 'markLat', 'markLon', 'markDist', 'markBrg',
 ];
 const STRING_COLS = new Set(['hdgSrc', 'mount', 'markEvent', 'iso']);
@@ -23,6 +24,7 @@ export class SessionData {
     this.frame = null;
     this.px = [];
     this.py = [];
+    this._line = null;
     this.append(payload);
     this.setEvents(meta.events || []);
   }
@@ -48,6 +50,7 @@ export class SessionData {
       this.n++;
     }
     this._project();
+    this._line = null;
     return rows.length;
   }
 
@@ -72,6 +75,38 @@ export class SessionData {
       this.px[i] = p.x;
       this.py[i] = p.y;
     }
+  }
+
+  /**
+   * The drawn track: a smooth curve through the phone's own fixes (see js/trackline.js). Sessions
+   * without the raw fix columns fall back to the filtered positions.
+   */
+  get line() {
+    if (this._line) return this._line;
+    const c = this.cols;
+    const fixes = [];
+    if (c.gnssLat && c.gnssT && this.hasData('gnssLat')) {
+      const isNew = c.gnssNew && this.hasData('gnssNew');
+      for (let i = 0; i < this.n; i++) {
+        if (isNew ? c.gnssNew[i] !== 1 : i > 0 && c.gnssT[i] === c.gnssT[i - 1]) continue;
+        if (!Number.isFinite(c.gnssLat[i])) continue;
+        if (!this.frame) this.frame = new LocalFrame(c.gnssLat[i], c.gnssLon[i]);
+        const p = this.frame.toXY(c.gnssLat[i], c.gnssLon[i]);
+        fixes.push({ t: c.gnssT[i], x: p.x, y: p.y, acc: c.gnssAcc[i], speed: Number.isFinite(c.gnssSpeed?.[i]) ? c.gnssSpeed[i] : c.sog?.[i] });
+      }
+    } else {
+      for (let i = 0; i < this.n; i++) fixes.push({ t: this.t[i], x: this.px[i], y: this.py[i], acc: c.gnssAcc?.[i], speed: c.sog?.[i] });
+    }
+    this._line = smoothTrack(cleanFixes(fixes));
+    return this._line;
+  }
+
+  /** Position on the drawn track at time t (the filtered position where the track has none). */
+  posAt(t) {
+    const p = lineAt(this.line, t);
+    if (p) return p;
+    const i = this.index(t);
+    return i >= 0 && Number.isFinite(this.px[i]) ? { x: this.px[i], y: this.py[i] } : null;
   }
 
   setEvents(events) {

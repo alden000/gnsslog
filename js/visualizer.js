@@ -166,7 +166,7 @@ export class Visualizer {
   /**
    * frame: {
    *   vessel: { x, y, hdg, acc, vx, vy } | null,
-   *   trail: [{ x, y, poor }],       // oldest first; poor: no proper GNSS (drawn dashed)
+   *   trail: [{ x, y, poor }],       // oldest first; poor: the link to it has no proper GNSS (dashed)
    *   sky: { x, y, dist } | null,
    *   headingUp: boolean,
    * }
@@ -243,12 +243,12 @@ export class Visualizer {
           ctx.lineWidth = poorPass ? 1.5 : 1.5 + 1.5 * k;
           ctx.setLineDash(poorPass ? [4, 5] : []);
           ctx.beginPath();
-          // null entries mark gaps (app was in the background); a link is poor if either end is
+          // null entries mark gaps; a point's poor flag is about the link that ends at it
           // (links are joined into one path while they continue, so the dashes run on)
           let pen = false;
           for (let i = Math.max(a, 1); i <= b; i++) {
             const p0 = tr[i - 1], p1 = tr[i];
-            if (!p0 || !p1 || !!(p0.poor || p1.poor) !== poorPass) {
+            if (!p0 || !p1 || !!p1.poor !== poorPass) {
               pen = false;
               continue;
             }

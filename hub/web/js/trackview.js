@@ -4,7 +4,6 @@
 
 import { MAP_SOURCES, SEAMARKS, TileCache, drawTileLayer } from '../../../js/maptiles.js';
 import { CanvasPainter } from './painter.js';
-import { isPoor } from '../../../js/quality.js';
 
 const SPEED_BINS = 8;
 export const tileCache = new TileCache();
@@ -78,91 +77,85 @@ export function drawTrackScene(p, s) {
     return;
   }
 
-  const n = data.n;
   const [selA, selB] = s.sel || [data.t0, data.t1];
   const [i0, i1] = data.range(selA, selB);
-  const toPts = (a, b) => {
-    const pts = [];
-    for (let i = a; i <= b; i++) {
-      if (data.isGap(i)) pts.push(NaN, NaN);
-      pts.push(sx(data.px[i]), sy(data.py[i]));
+  // The track is a smooth curve through the phone's own fixes (data.line).
+  const L = data.line;
+  const lo = (time) => {
+    let a = 0, b = L.n;
+    while (a < b) {
+      const m = (a + b) >> 1;
+      if (L.t[m] < time) a = m + 1;
+      else b = m;
     }
-    return pts;
+    return a;
   };
-  const halo = onMap ? { stroke: pal.halo, width: 6 } : null;
-
-  // Context outside the selection: thin and quiet.
-  if (s.sel) {
-    for (const [a, b] of [[0, i0], [i1, n - 1]]) {
-      if (b <= a) continue;
-      const pts = toPts(a, b);
-      if (halo) p.poly(pts, { ...halo, width: 4 });
-      p.poly(pts, { stroke: onMap ? pal.text2 : pal.text3, width: 1.5, alpha: 0.8 });
-    }
-  }
-
-  // The (selected) track. Stretches without proper GNSS (car parks, tunnels, indoors) are drawn
-  // thin and dashed, so they do not read as real movement; a link is poor if either end is.
-  const poor = (i) => isPoor(data.cols.gnssAcc?.[i], data.cols.posSigma?.[i]);
-  const linkPoor = (i) => poor(i - 1) || poor(i);
-  // Points of the links in [a, b] that are (not) poor, as polylines broken by NaN.
-  const links = (a, b, wantPoor) => {
+  const la = Math.min(lo(selA), L.n - 1), lb = Math.max(lo(selB + 0.001) - 1, la);
+  // Polylines (NaN breaks) of the links a..b whose quality is `poor` (null: any quality).
+  // Link j joins point j-1 to j; stretches without proper GNSS are drawn thin and dashed.
+  const links = (a, b, poor = null, keep = () => true) => {
     const pts = [];
     let pen = false;
-    for (let i = a + 1; i <= b; i++) {
-      if (data.isGap(i) || linkPoor(i) !== wantPoor) {
+    for (let j = Math.max(a, 0) + 1; j <= b; j++) {
+      if (L.brk[j] || (poor !== null && L.poor[j] !== poor) || !keep(j)) {
         pen = false;
         continue;
       }
       if (!pen) {
         if (pts.length) pts.push(NaN, NaN);
-        pts.push(sx(data.px[i - 1]), sy(data.py[i - 1]));
+        pts.push(sx(L.x[j - 1]), sy(L.y[j - 1]));
       }
-      pts.push(sx(data.px[i]), sy(data.py[i]));
+      pts.push(sx(L.x[j]), sy(L.y[j]));
       pen = true;
     }
     return pts;
   };
-  const main = links(i0, i1, false);
+  const halo = onMap ? { stroke: pal.halo, width: 6 } : null;
+
+  if (!L.n) {
+    p.text('No position data', w / 2, h / 2, { fill: pal.text3, size: 14, align: 'center', baseline: 'middle' });
+    return;
+  }
+
+  // Context outside the selection: thin and quiet.
+  if (s.sel) {
+    for (const [a, b] of [[0, la], [lb, L.n - 1]]) {
+      if (b <= a) continue;
+      const pts = links(a, b);
+      if (halo) p.poly(pts, { ...halo, width: 4 });
+      p.poly(pts, { stroke: onMap ? pal.text2 : pal.text3, width: 1.5, alpha: 0.8 });
+    }
+  }
+
+  // The (selected) track.
+  const main = links(la, lb, false);
   if (halo) p.poly(main, halo);
   if (s.colorBy === 'speed' && data.cols.sog) {
-    const [lo, hi] = speedRange(data, i0, i1);
-    const bin = (i) => {
-      const v = data.cols.sog[i];
-      return Number.isFinite(v) ? Math.min(SPEED_BINS - 1, Math.max(0, Math.floor(((v - lo) / (hi - lo)) * SPEED_BINS))) : 0;
+    const [lo2, hi] = speedRange(data, i0, i1);
+    const bin = (j) => {
+      const v = L.speed[j];
+      return Number.isFinite(v) ? Math.min(SPEED_BINS - 1, Math.max(0, Math.floor(((v - lo2) / (hi - lo2)) * SPEED_BINS))) : 0;
     };
-    // Consecutive points of the same speed bin go into one path (keeps SVGs small).
-    let start = i0, b = bin(i0);
-    const flush = (end) => p.poly(links(start, end, false), { stroke: pal.ramp[b], width: 3 });
-    for (let i = i0 + 1; i <= i1; i++) {
-      const bi = bin(i);
-      if (bi !== b) {
-        flush(i);
-        start = i;
-        b = bi;
-      }
+    // One path per speed bin (keeps SVGs small).
+    for (let b = 0; b < SPEED_BINS; b++) {
+      const pts = links(la, lb, false, (j) => bin(j) === b);
+      if (pts.length) p.poly(pts, { stroke: pal.ramp[b], width: 3 });
     }
-    flush(i1);
   } else {
     p.poly(main, { stroke: pal.trail, width: 2.5 });
   }
-  const weak = links(i0, i1, true);
+  const weak = links(la, lb, true);
   if (weak.length) p.poly(weak, { stroke: onMap ? pal.text : pal.text2, width: 1.5, dash: [4, 4], alpha: 0.75 });
 
   // Start / end of the (selected) track.
-  const firstPos = (a, b, dir) => {
-    for (let i = a; dir > 0 ? i <= b : i >= b; i += dir) if (Number.isFinite(data.px[i])) return i;
-    return -1;
-  };
-  const iStart = firstPos(i0, i1, 1), iEnd = firstPos(i1, i0, -1);
   const lbl = { fill: pal.text, size: 11, weight: 700, halo: pal.halo, haloWidth: 4 };
-  if (iStart >= 0) {
-    const x = sx(data.px[iStart]), y = sy(data.py[iStart]);
+  {
+    const x = sx(L.x[la]), y = sy(L.y[la]);
     p.circle(x, y, 5, { fill: pal.bg, stroke: pal.text, width: 2 });
     p.text('Start', x + 9, y - 8, lbl);
   }
-  if (iEnd >= 0 && iEnd !== iStart) {
-    const x = sx(data.px[iEnd]), y = sy(data.py[iEnd]);
+  if (lb !== la) {
+    const x = sx(L.x[lb]), y = sy(L.y[lb]);
     p.rect(x - 4.5, y - 4.5, 9, 9, { fill: pal.text, stroke: pal.bg, width: 1.5 });
     p.text('End', x + 9, y - 8, lbl);
   }
@@ -175,17 +168,18 @@ export function drawTrackScene(p, s) {
     p.text(m.label, x + 11, y + 4, lbl);
   }
 
-  // Playback cursor: line to the active mark, then the vessel.
+  // Playback cursor (on the drawn track at that time): line to the active mark, then the vessel.
   if (s.cursor !== null && s.cursor !== undefined) {
     const i = data.index(s.cursor);
-    if (Number.isFinite(data.px[i])) {
-      const x = sx(data.px[i]), y = sy(data.py[i]);
+    const pos = data.posAt(s.cursor);
+    if (pos) {
+      const x = sx(pos.x), y = sy(pos.y);
       const m = data.markAt(data.t[i]);
       if (m) {
         const xy = data.xyOf(m.lat, m.lon);
         const mx = sx(xy.x), my = sy(xy.y);
         p.line(mx, my, x, y, { stroke: pal.mark, width: 2, dash: [6, 5] });
-        const d = Number.isFinite(data.value('markDist', i)) ? data.value('markDist', i) : Math.hypot(xy.x - data.px[i], xy.y - data.py[i]);
+        const d = Number.isFinite(data.value('markDist', i)) ? data.value('markDist', i) : Math.hypot(xy.x - pos.x, xy.y - pos.y);
         const label = fmtDist(d);
         p.text(label, (mx + x) / 2, (my + y) / 2 - 8, { ...lbl, size: 12, align: 'center' });
       }

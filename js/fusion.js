@@ -99,6 +99,7 @@ export class Fusion extends EventTarget {
     pkf.predict(t);
     const lag = Math.max(0, (t - fixT) / 1000);
     let { x, y } = this.frame.toXY(fix.lat, fix.lon);
+    this._emit('fix', { t: fixT, x, y, acc: fix.acc, speed: fix.speed }); // for the drawn track
     const acc = Math.max(fix.acc || 10, 1);
     const moved = this._fixVelocity(fixT, x, y, acc);
     // Reported accuracy is a ~68% horizontal radius; per-axis 1-sigma is about 0.7 of it.

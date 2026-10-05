@@ -14,8 +14,9 @@ import { isNative, plugin } from './native.js';
 import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 import { isPoor } from './quality.js';
+import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
 
-const VERSION = '0.9.3';
+const VERSION = '0.9.4';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -164,16 +165,47 @@ sensors.addEventListener('nativeMotion', (e) => nativeData('motion', e.detail));
 let origin = null;
 fusion.addEventListener('frame', (e) => {
   origin = e.detail;
-  trail.length = 0; // coordinates of the old frame no longer apply
+  trailFixes.length = 0; // coordinates of the old frame no longer apply
+  trailDirty = true;
+});
+// The trail is a smooth curve through the phone's own fixes (js/trackline.js); the filter only
+// places the live vessel, which the trail joins from the last fix.
+fusion.addEventListener('fix', (e) => {
+  trailFixes.push(e.detail);
+  const from = e.detail.t - trailMinutes() * 60000;
+  let k = 0;
+  while (k < trailFixes.length && trailFixes[k].t < from) k++;
+  if (k) trailFixes.splice(0, k);
+  trailDirty = true;
 });
 
 // ---------------------------------------------------------------- 5 Hz ticker
 
-const trail = [];
+const trailFixes = []; // { t, x, y, acc, speed } of the last trailMinutes
+let trail = []; // drawn points { x, y, poor } (null breaks the line), rebuilt when a fix arrives
+let trailDirty = false;
 let lastState = null;
 
-function trailCap() {
-  return Math.max(1, settings.get('trailMinutes')) * 60 * (1000 / SAMPLE_INTERVAL);
+function trailMinutes() {
+  return Math.max(1, settings.get('trailMinutes'));
+}
+
+/** Curve (js/trackline.js) as visualiser trail points; poor = the link ending at the point. */
+function trailPoints(L, a = 0, b = L.n - 1) {
+  const out = [];
+  for (let j = Math.max(a, 0); j <= b; j++) {
+    if (L.brk[j] && j > a) out.push(null);
+    out.push({ x: L.x[j], y: L.y[j], poor: L.poor[j] });
+  }
+  return out;
+}
+
+function liveTrail() {
+  if (trailDirty) {
+    trail = trailPoints(smoothTrack(trailFixes));
+    trailDirty = false;
+  }
+  return trail;
 }
 
 let nextTick = Math.ceil(Date.now() / SAMPLE_INTERVAL) * SAMPLE_INTERVAL;
@@ -184,11 +216,6 @@ function sampleAt(t, live) {
   const s = fusion.state(t);
   s.origin = origin;
   lastState = s;
-  if (s.hasFix) {
-    trail.push({ x: s.x, y: s.y, poor: isPoor(s.acc, s.posSigma) });
-    const cap = trailCap();
-    if (trail.length > cap) trail.splice(0, trail.length - cap);
-  }
   recorder.add(s, { batch: !live });
   if (live && document.visibilityState === 'visible') renderLive(s);
 }
@@ -374,10 +401,11 @@ async function catchUp(fromT, toT) {
 const viz = new Visualizer($('#viz'), { onModeChange: (auto) => $('#btn-auto').setAttribute('aria-pressed', String(auto)) });
 viz.start(() => {
   const s = fusion.peek(Date.now());
-  if (!s.hasFix) return { vessel: null, trail, sky: null };
+  const tr = liveTrail();
+  if (!s.hasFix) return { vessel: null, trail: tr, sky: null };
   return {
     vessel: { x: s.x, y: s.y, hdg: s.hdg, acc: s.acc, vx: s.vx, vy: s.vy },
-    trail: trail.concat([{ x: s.x, y: s.y }]),
+    trail: tr.concat([{ x: s.x, y: s.y, poor: isPoor(s.acc, s.posSigma) }]),
     geo: fusion.frame, // lets the visualiser place map tiles
     sky: s.sky,
     centerOn: liveCenter,
@@ -433,7 +461,8 @@ $('#btn-trail-clear').onclick = () =>
     text: 'Removes the breadcrumb trail from the plot. Recorded data is not affected.',
     confirm: 'Clear trail',
     onConfirm: () => {
-      trail.length = 0;
+      trailFixes.length = 0;
+      trailDirty = true;
       toast('Trail cleared on the plot · recorded data is kept', { ms: 2200 });
     },
   });
@@ -512,7 +541,6 @@ recorder.addEventListener('change', () => {
 });
 recorder.addEventListener('stopped', () => sync.kick(true));
 recorder.addEventListener('resumed', (e) => {
-  trail.push(null); // break the breadcrumb line across the gap
   toast(`Recording was paused for ${fmtDuration(e.detail.gapMs)} while the app was in the background`, { kind: 'warn', ms: 6000 });
 });
 recorder.addEventListener('error', (e) => toast(`Storage error: ${e.detail?.message || e.detail}`, { kind: 'err' }));
@@ -995,7 +1023,14 @@ async function openPlayback(id) {
   const frame = new LocalFrame(first.lat, first.lon);
   pb.session = session;
   pb.samples = samples;
-  pb.pts = samples.map((s) => (isNum(s.lat) ? { ...frame.toXY(s.lat, s.lon), poor: isPoor(s.gnssAcc, s.posSigma) } : null));
+  pb.pts = samples.map((s) => (isNum(s.lat) ? frame.toXY(s.lat, s.lon) : null));
+  // Trail and vessel follow a smooth curve through the recorded fixes (filtered positions for
+  // sessions recorded without them).
+  const hasFixes = samples.some((s) => s.gnssNew === 1 && isNum(s.gnssLat));
+  const fixes = hasFixes
+    ? samples.filter((s) => s.gnssNew === 1 && isNum(s.gnssLat)).map((s) => ({ t: s.gnssT ?? s.t, ...frame.toXY(s.gnssLat, s.gnssLon), acc: s.gnssAcc, speed: s.gnssSpeed }))
+    : samples.filter((s) => isNum(s.lat)).map((s) => ({ t: s.t, ...frame.toXY(s.lat, s.lon), acc: s.gnssAcc, speed: s.sog }));
+  pb.line = smoothTrack(cleanFixes(fixes));
   pb.frame = frame;
   // Marked-location timeline: [{ t, spot | null }]
   pb.sky = session.events
@@ -1007,7 +1042,7 @@ async function openPlayback(id) {
   pb.t = pb.t0;
   pb.playing = false;
   pb.centerOn = 'mark';
-  pb.trailFrom = 0; // index the drawn trail starts from (Clear trail moves it to the playhead)
+  pb.trailFrom = 0; // time the drawn trail starts from (Clear trail moves it to the playhead)
 
   $('#pb-name').textContent = session.name;
   $('#pb-meta').textContent = `${fmtDate(session.startedAt)} · ${samples.length} samples · ${fmtDuration(pb.t1 - pb.t0)}`;
@@ -1086,7 +1121,8 @@ function playbackFrame() {
   if (pa) {
     const p2 = pbb || pa;
     const hdg = isNum(a.hdg) && isNum(b.hdg) ? wrap360(a.hdg + wrap180(b.hdg - a.hdg) * f) : a.hdg;
-    vessel = { x: pa.x + (p2.x - pa.x) * f, y: pa.y + (p2.y - pa.y) * f, hdg, acc: a.gnssAcc, vx: lerp(a.vx, b.vx), vy: lerp(a.vy, b.vy) };
+    const on = lineAt(pb.line, pb.t); // on the drawn track
+    vessel = { ...(on || { x: pa.x + (p2.x - pa.x) * f, y: pa.y + (p2.y - pa.y) * f }), hdg, acc: a.gnssAcc, vx: lerp(a.vx, b.vx), vy: lerp(a.vy, b.vy) };
   }
 
   let spot = null;
@@ -1098,14 +1134,10 @@ function playbackFrame() {
   }
 
   // Trail: last N minutes up to the playhead.
-  const cap = trailCap();
-  const tr = [];
-  for (let k = Math.max(0, i - cap, pb.trailFrom ?? 0); k <= i; k++) {
-    if (!pb.pts[k]) continue;
-    if (k > 0 && pb.samples[k].t - pb.samples[k - 1].t > 2000) tr.push(null); // gap: break the line
-    tr.push(pb.pts[k]);
-  }
-  if (vessel) tr.push({ x: vessel.x, y: vessel.y });
+  const from = Math.max(pb.t - trailMinutes() * 60000, pb.trailFrom || -Infinity);
+  const ja = lineIndex(pb.line, from) + 1, jb = lineIndex(pb.line, pb.t);
+  const tr = jb >= ja ? trailPoints(pb.line, ja, jb) : [];
+  if (vessel) tr.push({ x: vessel.x, y: vessel.y, poor: isPoor(a.gnssAcc, a.posSigma) });
 
   // Readouts (throttled to ~15 fps by cheap comparisons; DOM writes are small).
   const unit = settings.get('speedUnit');
@@ -1141,7 +1173,7 @@ $('#pb-trail-clear').onclick = () =>
     text: 'Hides the trail drawn so far; it builds up again from here. The session data is not affected.',
     confirm: 'Clear trail',
     onConfirm: () => {
-      pb.trailFrom = sampleIndexAt(pb.t);
+      pb.trailFrom = pb.t;
       toast('Trail cleared on the plot · session data is kept', { ms: 2200 });
     },
   });
@@ -1160,7 +1192,7 @@ $('#pb-play').onclick = () => {
 };
 $('#pb-scrub').oninput = (e) => {
   pb.t = pb.t0 + Number(e.target.value);
-  if (sampleIndexAt(pb.t) < pb.trailFrom) pb.trailFrom = 0;
+  if (pb.t < pb.trailFrom) pb.trailFrom = 0;
 };
 $('#pb-auto').onclick = () => pb.viz.setAuto(!pb.viz.auto);
 $('#pb-orient').onclick = $('#btn-orient').onclick;
