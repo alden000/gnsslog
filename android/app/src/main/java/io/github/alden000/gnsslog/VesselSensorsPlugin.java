@@ -53,7 +53,7 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     private static final int EMIT_MS = 40;
     private static final int BUF_MS = 100; // 10 Hz native log while recording
     private static final int BUF_FRAMES = 4 * 3600 * 10; // ~4 h
-    private static final int BUF_FIXES = 4 * 3600 * 2; // ~4 h at up to 2 Hz
+    private static final int BUF_FIXES = 4 * 3600 * 5; // ~4 h at 5 Hz, ~2 h at 10 Hz (Fast GPS test)
     private static final long ACK_TIMEOUT_MS = 90_000;
 
     private SensorManager sensorManager;
@@ -91,6 +91,7 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     private String gnssError = null;
     private long lastFixWall = 0;
     private volatile long lastAck = 0;
+    private volatile boolean fastGnss = false; // Fast GPS test: fixes also go to JavaScript live
     private boolean fallback = false; // RecordingService unavailable: GNSS + wake lock here
     private String serviceError = null;
 
@@ -171,6 +172,8 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
     @PluginMethod
     public void setBackground(PluginCall call) {
         background = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        fastGnss = Boolean.TRUE.equals(call.getBoolean("fastGnss", false));
+        RecordingService.fast = fastGnss;
         if (background && !running) startSensors();
         lastAck = System.currentTimeMillis();
         JSObject ret = new JSObject();
@@ -592,6 +595,41 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
             xHead = (xHead + 1) % BUF_FIXES;
             if (xCount < BUF_FIXES) xCount++;
         }
+        // Fast GPS test: the in-app location watcher stays at ~1 Hz, so these fixes go to
+        // JavaScript live as well (held back like the motion frames while it is frozen).
+        if (fastGnss && System.currentTimeMillis() - lastAck <= ACK_TIMEOUT_MS) {
+            JSObject f = new JSObject();
+            f.put("t", System.currentTimeMillis());
+            f.put("fixT", l.getTime());
+            f.put("lat", l.getLatitude());
+            f.put("lon", l.getLongitude());
+            if (l.hasAccuracy()) f.put("acc", l.getAccuracy());
+            if (l.hasAltitude()) f.put("alt", l.getAltitude());
+            if (Build.VERSION.SDK_INT >= 26 && l.hasVerticalAccuracy()) f.put("altAcc", l.getVerticalAccuracyMeters());
+            if (l.hasSpeed()) f.put("speed", l.getSpeed());
+            if (l.hasBearing()) f.put("bearing", l.getBearing());
+            f.put("provider", l.getProvider());
+            notifyListeners("gnssFix", f);
+        }
+    }
+
+    /** The GNSS chip as Android reports it (diagnostics for the Fast GPS test). */
+    @PluginMethod
+    public void gnssInfo(PluginCall call) {
+        JSObject ret = new JSObject();
+        LocationManager lm = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+        if (Build.VERSION.SDK_INT >= 28) {
+            ret.put("model", lm.getGnssHardwareModelName());
+            ret.put("year", lm.getGnssYearOfHardware());
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            android.location.GnssCapabilities c = lm.getGnssCapabilities();
+            ret.put("measurements", c.hasMeasurements());
+            ret.put("navMessages", c.hasNavigationMessages());
+        }
+        ret.put("fast", fastGnss);
+        ret.put("provider", RecordingService.running ? RecordingService.provider : gnssProvider);
+        call.resolve(ret);
     }
 
     /** GNSS for the native log (the live fixes come from the background-geolocation plugin). */
@@ -599,9 +637,9 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         if (gnssOn || handler == null) return;
         if (locationManager == null) locationManager = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
         String provider = LocationManager.GPS_PROVIDER;
-        if (Build.VERSION.SDK_INT >= 31 && locationManager.hasProvider(LocationManager.FUSED_PROVIDER)) provider = LocationManager.FUSED_PROVIDER;
+        if (!fastGnss && Build.VERSION.SDK_INT >= 31 && locationManager.hasProvider(LocationManager.FUSED_PROVIDER)) provider = LocationManager.FUSED_PROVIDER;
         try {
-            locationManager.requestLocationUpdates(provider, 1000L, 0f, locationListener, handler.getLooper());
+            locationManager.requestLocationUpdates(provider, fastGnss ? 100L : 1000L, 0f, locationListener, handler.getLooper());
             gnssOn = true;
             gnssProvider = provider;
             gnssError = null;

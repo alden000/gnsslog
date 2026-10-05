@@ -71,7 +71,7 @@ export class Sensors extends EventTarget {
     // The app's own location foreground service (RecordingService) keeps GNSS alive in the
     // background; the location plugin's watcher then stays in plain mode (one notification).
     // Without it, the plugin's watcher runs its own background service as before.
-    const r = await plugin('VesselSensors').setBackground({ enabled }).catch(() => null);
+    const r = await plugin('VesselSensors').setBackground({ enabled, fastGnss: !!this.fastGnss }).catch(() => null);
     this.serviceOk = !!(enabled && r?.service);
     this._applyGnssMode();
   }
@@ -102,6 +102,23 @@ export class Sensors extends EventTarget {
         this.serviceOk = false;
         this._applyGnssMode();
       }
+    });
+    // Fast GPS test: fixes straight from the GNSS chip (the in-app watcher stays at ~1 Hz and is
+    // ignored while these flow, so the two streams do not interleave).
+    await vs.addListener('gnssFix', (f) => {
+      this.lastFastFix = Date.now();
+      if (this.status.gnss !== 'ok') this._setStatus({ gnss: 'ok', gnssError: '' });
+      this._emit('gnss', {
+        t: f.t,
+        fixT: f.fixT,
+        lat: f.lat,
+        lon: f.lon,
+        acc: f.acc ?? null,
+        alt: f.alt ?? null,
+        altAcc: f.altAcc ?? null,
+        speed: Number.isFinite(f.speed) ? f.speed : null,
+        cog: Number.isFinite(f.bearing) && f.speed > 0 ? f.bearing : null,
+      });
     });
     await vs.addListener('motion', (e) => {
       if (e.R && this.status.orientation !== 'ok') this._setStatus({ orientation: 'ok' });
@@ -135,6 +152,7 @@ export class Sensors extends EventTarget {
         return;
       }
       if (this.status.gnss !== 'ok') this._setStatus({ gnss: 'ok', gnssError: '' });
+      if (Date.now() - (this.lastFastFix || 0) < 2000) return; // Fast GPS test stream is flowing
       this._emit('gnss', {
         t: Date.now(),
         fixT: loc.time,

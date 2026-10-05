@@ -5,7 +5,7 @@
 
 import { isPoor } from './quality.js';
 
-const DUP_MS = 150; // fixes this close in time are copies (background service + in-app watcher)
+const DUP_MS = 50; // fixes this close in time are copies (background service + in-app watcher)
 const BREAK_MS = 15000; // no fix for longer than this: the line is broken, not bridged
 const BREAK_SPEED = 80; // m/s: a step faster than this is a glitch, not travel
 const STEP_M = 1.5; // curve points about this far apart
@@ -13,7 +13,7 @@ const MAX_SUB = 16; // ...but at most this many per fix-to-fix span
 
 /**
  * One monotonic stream of fixes, like the position filter uses: in arrival (recorded) order, a
- * fix at or before the last one kept (+150 ms) is a copy from the second location stream, or a
+ * fix at or before the last one kept (+50 ms) is a copy from the second location stream, or a
  * straggler, and is dropped rather than slotted back in.
  * fixes: [{ t, x, y, acc, speed }] in arrival order.
  */

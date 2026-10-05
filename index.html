@@ -228,6 +228,15 @@
           <div class="diag tnum" id="diag">—</div>
         </div>
 
+        <span class="section-label reveal native-only" style="--i: 2">GNSS</span>
+        <div class="glass card group reveal native-only" style="--i: 2">
+          <div class="row">
+            <span>Fast GPS test <small>GNSS chip asked for 10 fixes/s while recording · more battery</small></span>
+            <button class="switch" role="switch" data-setting="fastGnss"><i></i></button>
+          </div>
+          <p class="hint">Normally the phone's location service gives one fix a second. This asks the GPS chip directly for a fix every 100 ms, to see what this phone can deliver. Takes effect from the next recording; the session logs the rate actually received.</p>
+        </div>
+
         <span class="section-label reveal" style="--i: 3">Cloud upload</span>
         <div class="glass card group reveal" style="--i: 3">
           <label class="row col">

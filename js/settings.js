@@ -18,6 +18,7 @@ export const DEFAULTS = {
   mapLayer: 'off', // off | street | satellite (visualiser background)
   seamarks: false, // OpenSeaMap overlay on the map
   trailMinutes: 10,
+  fastGnss: false, // Android: Fast GPS test, the GNSS chip asked for a fix every 100 ms while recording
   endpoint: '',
   authHeader: 'Authorization',
   authValue: '',

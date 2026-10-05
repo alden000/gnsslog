@@ -16,7 +16,7 @@ import { haptic, installHaptics } from './haptics.js';
 import { isPoor } from './quality.js';
 import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
 
-const VERSION = '0.9.4';
+const VERSION = '0.9.5';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -144,6 +144,8 @@ function setChip(el, cls, text) {
 
 const settings = new Settings();
 installHaptics(settings);
+// Settings that only apply in the Android app.
+if (!isNative) for (const el of document.querySelectorAll('.native-only')) el.hidden = true;
 const db = await openDB();
 const sensors = new Sensors();
 const fusion = new Fusion(settings);
@@ -171,6 +173,7 @@ fusion.addEventListener('frame', (e) => {
 // The trail is a smooth curve through the phone's own fixes (js/trackline.js); the filter only
 // places the live vessel, which the trail joins from the last fix.
 fusion.addEventListener('fix', (e) => {
+  countFix(e.detail.t);
   trailFixes.push(e.detail);
   const from = e.detail.t - trailMinutes() * 60000;
   let k = 0;
@@ -534,6 +537,7 @@ function renderRecorder() {
   }
 }
 recorder.addEventListener('change', () => {
+  sensors.fastGnss = settings.get('fastGnss');
   sensors.setBackground(recorder.active); // Android app: foreground service + wake lock while recording
   sync.setLive(recorder.active);
   renderRecorder();
@@ -651,13 +655,44 @@ $('#btn-rec').onclick = () => {
   );
 };
 
+// GNSS rate diagnostics: one 'gnssRate' event per minute of fix time while recording (fixes the
+// filter applied, live or replayed), for judging what the hardware delivers (Fast GPS test).
+let rateWin = null;
+function countFix(fixT) {
+  if (!recorder.active) {
+    rateWin = null;
+    return;
+  }
+  if (!rateWin || fixT < rateWin.t0) rateWin = { t0: fixT, last: fixT, n: 1, gaps: [] };
+  else if (fixT - rateWin.t0 >= 60000) {
+    const g = rateWin.gaps.sort((a, b) => a - b);
+    recorder.note('gnssRate', rateWin.t0, {
+      spanMs: rateWin.last - rateWin.t0,
+      fixes: rateWin.n,
+      perSec: Math.round((100 * (rateWin.n - 1)) / Math.max((rateWin.last - rateWin.t0) / 1000, 1)) / 100,
+      gapP50: g[Math.floor(g.length / 2)] ?? null,
+      gapP10: g[Math.floor(g.length * 0.1)] ?? null,
+      fast: !!settings.get('fastGnss'),
+    });
+    rateWin = { t0: fixT, last: fixT, n: 1, gaps: [] };
+  } else {
+    rateWin.gaps.push(fixT - rateWin.last);
+    rateWin.last = fixT;
+    rateWin.n++;
+  }
+}
+
 /** Android app: record location/battery permission levels in the session (diagnostics). */
 async function notePermissions() {
   try {
     const vs = plugin('VesselSensors');
-    const [loc, batt] = await Promise.all([vs.locationStatus(), vs.batteryStatus()]);
+    const [loc, batt, gnss] = await Promise.all([vs.locationStatus(), vs.batteryStatus(), vs.gnssInfo().catch(() => null)]);
     if (!recorder.session) return;
-    recorder.session.device = { ...recorder.session.device, perm: { location: loc.background ? 'always' : loc.fine ? 'while-using' : 'denied', battery: batt.unrestricted ? 'unrestricted' : 'optimised' } };
+    recorder.session.device = {
+      ...recorder.session.device,
+      perm: { location: loc.background ? 'always' : loc.fine ? 'while-using' : 'denied', battery: batt.unrestricted ? 'unrestricted' : 'optimised' },
+      ...(gnss ? { gnss } : {}), // chip model/year as Android reports it, Fast GPS test on/off
+    };
     recorder.session.metaVersion++;
     recorder.flush();
   } catch {}

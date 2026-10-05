@@ -32,7 +32,7 @@ test('the curve passes through every fix and stays close to the true path in a c
 });
 
 test('copies and late fixes are dropped; long gaps and glitches break the line', () => {
-  const f = cleanFixes([{ t: 1000, x: 0, y: 0 }, { t: 2000, x: 5, y: 0 }, { t: 2060, x: 5.2, y: 0 }, { t: 1500, x: -9, y: 0 }, { t: 3000, x: 10, y: 0 }]);
+  const f = cleanFixes([{ t: 1000, x: 0, y: 0 }, { t: 2000, x: 5, y: 0 }, { t: 2030, x: 5.2, y: 0 }, { t: 1500, x: -9, y: 0 }, { t: 3000, x: 10, y: 0 }]);
   assert.deepEqual(f.map((p) => p.t), [1000, 2000, 3000]);
   const L = smoothTrack([...f, { t: 30000, x: 20, y: 0, acc: 4 }, { t: 31000, x: 5000, y: 0, acc: 4 }]);
   assert.equal(L.brk.filter(Boolean).length, 3); // start, after the 27 s gap, after the 5 km jump

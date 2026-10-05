@@ -37,6 +37,8 @@ public class RecordingService extends Service {
     }
 
     public static volatile FixSink sink;
+    /** Fast GPS test: the GNSS chip itself (GPS_PROVIDER) asked for a fix every 100 ms. */
+    public static volatile boolean fast = false;
 
     // Diagnostics, read by VesselSensorsPlugin.drain().
     public static volatile boolean running = false;
@@ -135,9 +137,9 @@ public class RecordingService extends Service {
         }
         lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         String p = LocationManager.GPS_PROVIDER;
-        if (Build.VERSION.SDK_INT >= 31 && lm.hasProvider(LocationManager.FUSED_PROVIDER)) p = LocationManager.FUSED_PROVIDER;
+        if (!fast && Build.VERSION.SDK_INT >= 31 && lm.hasProvider(LocationManager.FUSED_PROVIDER)) p = LocationManager.FUSED_PROVIDER;
         try {
-            lm.requestLocationUpdates(p, 1000L, 0f, listener, handler.getLooper());
+            lm.requestLocationUpdates(p, fast ? 100L : 1000L, 0f, listener, handler.getLooper());
             gnssOn = true;
             provider = p;
             error = null;

@@ -71,7 +71,7 @@ test('the second copy of each fix (background service + in-app watcher) is ignor
   seen.push(f.lastFixT);
   f.onGnss({ t: 1e6 + 1150, fixT: 1e6 + 1000, ...at(1, 0), acc: 4, speed: 1, cog: 90 });
   seen.push(f.lastFixT);
-  f.onGnss({ t: 1e6 + 1200, fixT: 1e6 + 1060, ...at(1.2, 0), acc: 4, speed: 1, cog: 90 }); // near copy
+  f.onGnss({ t: 1e6 + 1200, fixT: 1e6 + 1030, ...at(1.2, 0), acc: 4, speed: 1, cog: 90 }); // near copy
   f.onGnss({ t: 1e6 + 1250, fixT: 1e6 + 300, ...at(-9, 0), acc: 4, speed: 1, cog: 90 }); // late, older
   assert.deepEqual(seen, [1e6, 1e6 + 1000]);
   assert.equal(f.lastFixT, 1e6 + 1000);
@@ -185,4 +185,18 @@ test('cornering with fixes every second: the track is a smooth curve, not a poly
   }
   // a 20 deg/s turn sampled at 5 Hz bends 4 deg per step (0.9.2: 85 deg)
   assert.ok(worst < 8, `sharpest kink ${worst.toFixed(1)} deg`);
+});
+
+test('Fast GPS test: fixes ten times a second are all used, and the track stays on them', () => {
+  const f = new Fusion(settings);
+  const v = 7;
+  let applied = 0, worst = 0;
+  f.addEventListener('fix', () => applied++);
+  for (let i = 0; i < 300; i++) {
+    const fixT = 1e6 + i * 100;
+    f.onGnss({ t: fixT + 300, fixT, ...at(v * i * 0.1, 0), acc: 3, speed: v, cog: 90 });
+    if (i > 50) worst = Math.max(worst, offAt(f, fixT + 300, v * (i * 0.1 + 0.3), 0));
+  }
+  assert.equal(applied, 300);
+  assert.ok(worst < 1, `max offset ${worst.toFixed(2)} m`);
 });

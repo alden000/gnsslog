@@ -20,7 +20,7 @@ const DEV_MAX_TURN = 3; // deg/s: ...and running straight
 const STILL_MAX_SPEED = 0.5; // m/s: GNSS must agree the phone is not moving before a zero-rate update
 const ZERO_RATE_SIGMA = 0.02; // deg/s: floor on the zero-rate bias measurement
 const ZUPT_SIGMA = 0.05; // m/s: lying still also means not moving (zero-velocity update)
-const FIX_DUP_MS = 150; // fixes this close to (or older than) the last applied one are dropped
+const FIX_DUP_MS = 50; // fixes this close to (or older than) the last applied one are dropped (10 Hz safe)
 const MAX_LATENCY_S = 3; // fixes up to this old are projected to the present with the filter velocity
 const COURSE_LAG_S = 1; // the chipset's course lags the turn by about this much
 const TURN_SPEED_ONLY = 5; // deg/s: turning faster than this, the course is not used (speed only)
@@ -206,9 +206,10 @@ export class Fusion extends EventTarget {
   /** Velocity from the previous fix to this one, when both are recent and good enough to judge by. */
   _fixVelocity(fixT, x, y, acc) {
     const p = this.prevFix;
-    this.prevFix = { t: fixT, x, y, acc };
+    const dt = p ? (fixT - p.t) / 1000 : 0;
+    // At up to 10 fixes/s (Fast GPS test) compare with a fix at least 0.5 s back.
+    if (!p || dt >= 0.5 || dt < 0) this.prevFix = { t: fixT, x, y, acc };
     if (!p) return null;
-    const dt = (fixT - p.t) / 1000;
     if (!(dt >= 0.5 && dt <= 2.5) || acc > 20 || p.acc > 20) return null;
     // Consecutive fixes share most of their error, so the movement between them is much
     // better than either accuracy figure suggests.

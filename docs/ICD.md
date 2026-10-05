@@ -115,7 +115,7 @@ identifier. A breaking change gets a new identifier (`gnsslog/2`).
 | `origin` | object \| null | `{ lat, lon }` (degrees): origin of the local `x`/`y` frame used by the samples. |
 | `events` | array | All session events so far, in order (section 5.4). |
 | `metaVersion` | number | Increases whenever any metadata changes (events, name, notes, status). Section 6.2. |
-| `device` | object | `{ ua, name, perm? }`: browser/WebView user agent, the user-set device name (may be `null`) and, in the Android app, `perm: { location: "always" \| "while-using" \| "denied", battery: "unrestricted" \| "optimised" }`. |
+| `device` | object | `{ ua, name, perm?, gnss? }`: browser/WebView user agent, the user-set device name (may be `null`) and, in the Android app, `perm: { location: "always" \| "while-using" \| "denied", battery: "unrestricted" \| "optimised" }`, and `gnss: { model?, year?, measurements?, navMessages?, fast, provider }` (the GNSS chip as Android reports it). |
 | `config` | object | Snapshot of the app settings at recording start (declination, mounting, filter tuning, …), auth value removed. Informative; keys may change between app versions. |
 | `app` | object | `{ version }`, e.g. `"0.8.4"`. |
 
@@ -192,6 +192,7 @@ reference hub turns every new field into a database column automatically.
 | `gap` | `gapMs`, `segment` | Android app: no data at all for this stretch (the whole app was frozen). |
 | `catchup` | `frozenMs`, `frames`, `fixes`, `samples`, `holes`, `gnssService?`, `gnssOn?`, `gnssProvider?`, `gnssLogged?`, `gnssLastFixAgoMs?`, `gnssError?` | Android app: data missed by a frozen WebView was recovered from the native log, with the state of the native GNSS listener (diagnostic). |
 | `late` | `spanMs`, `maxLagMs`, `frames` | Android app: data arrived late in a burst and was placed at its real time (diagnostic). |
+| `gnssRate` | `spanMs`, `fixes`, `perSec`, `gapP50`, `gapP10`, `fast` | Android app: GNSS fixes received over about a minute of fix time (`t` = first fix), and whether the Fast GPS test (fixes every 100 ms straight from the GNSS chip) was on (diagnostic). |
 
 Unknown event types MUST be ignored or stored as they are.
 
