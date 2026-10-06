@@ -381,6 +381,24 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         call.resolve();
     }
 
+    /** Open an http(s) link in the default browser (the log analyser). */
+    @PluginMethod
+    public void openUrl(PluginCall call) {
+        String url = call.getString("url", "");
+        if (!url.startsWith("https://") && !url.startsWith("http://")) {
+            call.reject("http(s) URLs only");
+            return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            getContext().startActivity(i);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("No browser: " + e.getMessage());
+        }
+    }
+
     /** Whether Android exempts the app from battery optimisation (Samsung: "Unrestricted"). */
     @PluginMethod
     public void batteryStatus(PluginCall call) {

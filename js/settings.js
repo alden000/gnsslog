@@ -1,5 +1,7 @@
 // Persistent user settings (localStorage), with change notifications.
 
+import { PRESET } from './preset.js';
+
 const KEY = 'gnsslog.settings';
 
 export const DEFAULTS = {
@@ -19,9 +21,9 @@ export const DEFAULTS = {
   seamarks: false, // OpenSeaMap overlay on the map
   trailMinutes: 10,
   fastGnss: false, // Android: Fast GPS test, the GNSS chip asked for a fix every 100 ms while recording
-  endpoint: '',
-  authHeader: 'Authorization',
-  authValue: '',
+  endpoint: PRESET.endpoint || '',
+  authHeader: PRESET.authHeader || 'Authorization',
+  authValue: PRESET.authValue || '',
   autoSync: true,
   chunkSize: 1000,
   deviceName: '',
@@ -46,6 +48,8 @@ export class Settings extends EventTarget {
       }
     }
     this.values = { ...DEFAULTS, ...stored };
+    // A private build's preset fills upload settings that are still empty (stored '' included).
+    for (const [k, v] of Object.entries(PRESET)) if (v && !this.values[k]) this.values[k] = v;
   }
 
   get(k) {

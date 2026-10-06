@@ -16,7 +16,7 @@ import { haptic, installHaptics } from './haptics.js';
 import { isPoor } from './quality.js';
 import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
 
-const VERSION = '0.9.5';
+const VERSION = '0.9.6';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -681,6 +681,24 @@ function countFix(fixT) {
     rateWin.n++;
   }
 }
+
+// The GNSS Log hub serves its analyser at the same address as /ingest.
+function analyzerUrl() {
+  const m = /^(https?:\/\/[^/]+)\/ingest\/?$/i.exec((settings.get('endpoint') || '').trim());
+  return m ? m[1] + '/' : null;
+}
+function renderAnalyzerLink() {
+  const url = analyzerUrl();
+  $('#analyzer-row').hidden = !url;
+  if (url) $('#analyzer-host').textContent = new URL(url).host;
+}
+$('#btn-analyzer').onclick = () => {
+  const url = analyzerUrl();
+  if (!url) return;
+  if (isNative) plugin('VesselSensors').openUrl({ url }).catch((e) => toast(e.message || String(e), { kind: 'err' }));
+  else window.open(url, '_blank', 'noopener');
+};
+renderAnalyzerLink();
 
 /** Android app: record location/battery permission levels in the session (diagnostics). */
 async function notePermissions() {
@@ -1349,6 +1367,7 @@ settings.addEventListener('change', (e) => {
   if (k === 'mount') fusion.resetDeviation(); // different geometry, different deviation
   if (k === 'invertGyro' || k === 'autoDeviation') fusion.hkf.reset();
   if (['endpoint', 'authHeader', 'authValue', 'autoSync'].includes(k)) sync.kick(true);
+  if (k === 'endpoint') renderAnalyzerLink();
 });
 
 async function renderStorage() {
