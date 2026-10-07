@@ -150,10 +150,20 @@ try {
   await page.click('.dock-tab[data-tab="settings"]');
   await sleep(400);
   await page.screenshot({ path: join(out, '4-settings.png'), fullPage: false });
-  await page.fill('[data-setting="authValue"]', 'Bearer smoke-token');
-  await page.press('[data-setting="authValue"]', 'Tab');
-  await page.fill('[data-setting="endpoint"]', 'http://localhost:8792/ingest');
-  await page.press('[data-setting="endpoint"]', 'Tab');
+  // Pair: the analyser makes a one-time code (local request, no Access), the phone types it.
+  assert.equal(await page.isVisible('#btn-pair-scan'), false, 'no QR scanner in the web app');
+  const pc = await (await fetch('http://localhost:8792/api/devices/pair', { method: 'POST' })).json();
+  await page.click('#btn-pair-code');
+  await sleep(400);
+  await page.fill('#pair-host', 'http://localhost:8792');
+  await page.fill('#pair-code', pc.display.toLowerCase());
+  await page.fill('#pair-name', 'Smoke phone');
+  await page.screenshot({ path: join(out, '4b-pair.png') });
+  await page.click('#sheet [data-act="ok"]');
+  await page.waitForFunction(() => /Paired with localhost:8792 as "Smoke phone"/.test(document.querySelector('#pair-status').textContent), null, { timeout: 5000 });
+  assert.equal(await page.isVisible('#btn-unpair'), true);
+  const devs = await (await fetch('http://localhost:8792/api/devices')).json();
+  assert.deepEqual(devs.devices.map((d) => d.name), ['Smoke phone']);
   await page.click('.dock-tab[data-tab="sessions"]');
   await page.waitForFunction(() => document.querySelector('.badge')?.textContent === 'Uploaded', null, { timeout: 10000 });
   await sleep(900);

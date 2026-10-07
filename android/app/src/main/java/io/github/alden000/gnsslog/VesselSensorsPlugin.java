@@ -27,6 +27,9 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import org.json.JSONException;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 
 /**
  * Attitude and gyroscope for GNSS Log, delivered from native code so they keep flowing while the
@@ -379,6 +382,28 @@ public class VesselSensorsPlugin extends Plugin implements SensorEventListener {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(i);
         call.resolve();
+    }
+
+    /**
+     * Scan a QR code with Google's code scanner (pairing with a hub). Resolves { text }; rejects
+     * with "cancelled", or with the reason (no camera, Play services missing, ...).
+     */
+    @PluginMethod
+    public void scanQr(PluginCall call) {
+        if (!getContext().getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)) {
+            call.reject("This phone has no camera: type the code instead.");
+            return;
+        }
+        GmsBarcodeScannerOptions opts = new GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build();
+        GmsBarcodeScanning.getClient(getActivity(), opts)
+            .startScan()
+            .addOnSuccessListener(b -> {
+                JSObject ret = new JSObject();
+                ret.put("text", b.getRawValue());
+                call.resolve(ret);
+            })
+            .addOnCanceledListener(() -> call.reject("cancelled"))
+            .addOnFailureListener(e -> call.reject("Scanner unavailable: " + e.getMessage() + ". Type the code instead."));
     }
 
     /** Open an http(s) link in the default browser (the log analyser). */

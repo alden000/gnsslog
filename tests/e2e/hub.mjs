@@ -147,6 +147,24 @@ try {
   await page.click('#cf-go');
   await page.waitForFunction(() => !document.querySelector('#view-list').hidden && document.querySelectorAll('.row').length === 2);
 
+  // ---- phones: pair a new one (QR + code), the phone redeems it, then remove it
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('#btn-phones');
+  await page.waitForSelector('#ph-list li');
+  await page.click('#ph-pair');
+  await page.waitForSelector('#ph-qr svg');
+  const shown = await page.textContent('#ph-code');
+  assert.match(shown, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+  await page.screenshot({ path: join(out, 'hub-pair.png') });
+  const pr = await fetch(`${base}/ingest/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: shown, device: 'Test phone' }) });
+  assert.equal(pr.status, 200);
+  await page.waitForSelector('#ph-list li:has-text("Test phone")', { timeout: 6000 });
+  await page.screenshot({ path: join(out, 'hub-phones.png') });
+  await page.click('#ph-list li:has-text("Test phone") [data-act="remove"]');
+  await page.click('#cf-go');
+  await page.waitForSelector('#ph-list li.empty', { timeout: 5000 });
+  await page.keyboard.press('Escape');
+
   assert.deepEqual(errors, []);
   console.log('HUB E2E OK, files in', out);
 } catch (err) {

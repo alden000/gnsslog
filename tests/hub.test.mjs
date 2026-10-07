@@ -235,3 +235,60 @@ test('session list carries a simplified thumbnail track', async () => {
   const s = list.find((x) => x.id === ID);
   assert.ok(Array.isArray(s.stats.track) && s.stats.track.length >= 4 && s.stats.track.length <= 300);
 });
+
+test('pairing: one-time code -> own token; revoke; the shared token can be switched off', async () => {
+  const dir3 = mkdtempSync(join(tmpdir(), 'hub3-'));
+  const hub3 = createHub({ dataDir: dir3, ingestToken: TOKEN, quiet: true, noBackup: true });
+  const b3 = `http://127.0.0.1:${(await hub3.listen(0, '127.0.0.1')).port}`;
+  const j = (path, method = 'GET', body, headers = {}) =>
+    fetch(b3 + path, { method, headers: { 'Content-Type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const upload = (auth, id = 'bbbbbbbb-1111-2222-3333-444444444444') =>
+    j('/ingest', 'POST', { schema: 'gnsslog/1', session: session(id), chunk: { from: 0, to: 0, count: 1 }, samples: [sample(0)] }, auth ? { Authorization: auth } : {});
+  try {
+    const code = await (await j('/api/devices/pair', 'POST')).json();
+    assert.match(code.code, /^[A-HJ-NP-Z2-9]{8}$/);
+    assert.equal((await (await j(`/api/devices/pair/${code.code}`)).json()).status, 'pending');
+
+    // The phone types it with a dash, in lower case, through Cloudflare (no Access token needed).
+    const r = await j('/ingest/pair', 'POST', { code: code.display.toLowerCase(), device: 'S24U' }, { 'cf-ray': 'x' });
+    assert.equal(r.status, 200);
+    const { token, deviceId, name } = await r.json();
+    assert.equal(name, 'S24U');
+    assert.ok(token.length >= 40);
+    // single use
+    assert.equal((await j('/ingest/pair', 'POST', { code: code.code, device: 'other' })).status, 403);
+    const st = await (await j(`/api/devices/pair/${code.code}`)).json();
+    assert.equal(st.status, 'paired');
+    assert.equal(st.device.id, deviceId);
+
+    assert.equal((await upload(`Bearer ${token}`)).status, 200);
+    assert.equal((await upload(`Bearer ${TOKEN}`)).status, 200, 'shared token still on');
+    assert.equal((await upload('Bearer nope')).status, 401);
+    assert.equal((await upload(null)).status, 401);
+
+    const list = await (await j('/api/devices')).json();
+    assert.deepEqual(list.devices.map((d) => d.name), ['S24U']);
+    assert.ok(list.devices[0].lastSeen);
+    assert.deepEqual(list.legacy, { configured: true, enabled: true });
+    assert.equal((await (await j(`/api/devices/${deviceId}`, 'PATCH', { name: 'Tender 2' })).json()).name, 'Tender 2');
+
+    // Shared token off: only paired phones upload.
+    await j('/api/devices/legacy', 'PUT', { enabled: false });
+    assert.equal((await upload(`Bearer ${TOKEN}`)).status, 401);
+    assert.equal((await upload(`Bearer ${token}`)).status, 200);
+
+    // Removed phone: its token stops working.
+    assert.equal((await j(`/api/devices/${deviceId}`, 'DELETE')).status, 200);
+    assert.equal((await upload(`Bearer ${token}`)).status, 401);
+    assert.equal((await (await j('/api/devices')).json()).devices.length, 0);
+
+    // Admin routes are not reachable through Cloudflare without Access; wrong codes are rate-limited.
+    assert.equal((await j('/api/devices/pair', 'POST', undefined, { 'cf-ray': 'x' })).status, 403);
+    let last;
+    for (let i = 0; i < 11; i++) last = await j('/ingest/pair', 'POST', { code: 'ZZZZZZZZ', device: 'x' });
+    assert.equal(last.status, 429);
+  } finally {
+    await hub3.close();
+    rmSync(dir3, { recursive: true, force: true });
+  }
+});

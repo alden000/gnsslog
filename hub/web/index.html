@@ -28,6 +28,10 @@
       </a>
       <div class="top-actions">
         <span id="conn" class="conn" title="Live connection to the hub"></span>
+        <button id="btn-phones" class="btn ghost small" type="button" title="Paired phones: pair a new one, rename or remove">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm0 3v13h8V5H8Zm3 14v1h2v-1h-2Z"/></svg>
+          Phones
+        </button>
         <button id="btn-theme" class="icon-btn" type="button" aria-label="Switch theme" title="Theme: system / light / dark">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.3A5.5 5.5 0 0 1 13.3 3.1 9 9 0 0 0 12 3Z"/></svg>
         </button>
@@ -211,6 +215,42 @@
         <div class="dlg-actions">
           <button class="btn ghost" value="cancel">Cancel</button>
           <button id="ren-go" class="btn primary" type="button">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dlg-phones" class="sheet">
+      <form method="dialog">
+        <h2>Phones</h2>
+        <div id="ph-list-view">
+          <p class="note">Phones upload with their own key, which they get by pairing. Removing a phone stops its uploads; its recordings stay.</p>
+          <ul id="ph-list" class="ph-list"></ul>
+          <div id="ph-legacy" class="ph-legacy" hidden>
+            <span><b>Old shared key</b> <small id="ph-legacy-state"></small></span>
+            <button id="ph-legacy-btn" class="btn ghost small" type="button"></button>
+          </div>
+          <div class="dlg-actions">
+            <button class="btn ghost" value="cancel">Close</button>
+            <button id="ph-pair" class="btn primary" type="button">Pair a phone</button>
+          </div>
+        </div>
+        <div id="ph-pair-view" hidden>
+          <p class="note">On the phone: <b>GNSS Log → Settings → Cloud upload → Pair</b>, then scan this code. Without a camera, type the address and code below.</p>
+          <div class="ph-pair">
+            <div id="ph-qr" class="ph-qr" aria-label="Pairing QR code"></div>
+            <div class="ph-text">
+              <small>Hub</small>
+              <div id="ph-host" class="ph-host"></div>
+              <small>Code</small>
+              <div id="ph-code" class="ph-code"></div>
+              <small id="ph-expiry" class="tnum"></small>
+            </div>
+          </div>
+          <p id="ph-local" class="note warn" hidden>This page is open on the hub PC itself. Open the analyser through its internet address to pair a phone.</p>
+          <div class="dlg-actions">
+            <button id="ph-back" class="btn ghost" type="button">Back</button>
+            <button id="ph-new" class="btn ghost" type="button">New code</button>
+          </div>
         </div>
       </form>
     </dialog>

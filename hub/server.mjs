@@ -7,20 +7,29 @@
 //   port         8787              HUB_PORT
 //   host         127.0.0.1         HUB_HOST   (Cloudflare Tunnel connects locally; use 0.0.0.0 for LAN)
 //   dataDir      hub/data          HUB_DATA
-//   ingestToken  ''                HUB_INGEST_TOKEN  (phone sends "Authorization: Bearer <token>")
+//   ingestToken  ''                HUB_INGEST_TOKEN  (old shared upload token; phones now pair, see below)
 //   backupDir    <dataDir>/backups HUB_BACKUP_DIR    (e.g. a OneDrive folder for an off-site copy)
 //   backupKeep   14                HUB_BACKUP_KEEP
 //   accessTeam   ''                HUB_ACCESS_TEAM   (Cloudflare Zero Trust team, e.g. "myteam")
 //   accessAud    ''                HUB_ACCESS_AUD    (Application Audience tag of the Access app)
 //
-// Security model: uploads need the ingest token. Everything else (analyser + API) sits behind
+// Security model: uploads need a phone's own token (from pairing, hub/devices.mjs) or, until it is
+// switched off in the analyser, the old shared ingest token. Everything else (analyser + API) sits behind
 // Cloudflare Access: a request that arrives through Cloudflare must carry an Access token
 // (Cf-Access-Jwt-Assertion) whose signature, audience, issuer and expiry check out against the
 // team's public keys. Anything else is refused, so the /ingest bypass (or any route without
-// Access) only ever reaches /ingest. Requests that do not come through Cloudflare (this PC) are allowed.
+// Access) only ever reaches /ingest and /ingest/pair. Requests that do not come through Cloudflare
+// (this PC) are allowed.
 //
 // Routes
 //   POST /ingest                         phone uploads (schema gnsslog/1)
+//   POST /ingest/pair                    { code, device } -> { token, deviceId, name }  (one-time code)
+//   GET  /api/devices                    paired phones + old shared token state
+//   POST /api/devices/pair               new one-time code -> { code, display, expiresAt }
+//   GET  /api/devices/pair/:code         { status: pending|paired|expired|unknown, device? }
+//   PATCH  /api/devices/:id              { name }
+//   DELETE /api/devices/:id              revoke the phone's token
+//   PUT  /api/devices/legacy             { enabled }  the old shared token on/off
 //   GET  /api/health
 //   GET  /api/sessions                   list with stats
 //   GET  /api/sessions/:id               metadata, events, stats
@@ -39,7 +48,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
-import { timingSafeEqual, createPublicKey, verify as verifySig } from 'node:crypto';
+import { createPublicKey, verify as verifySig } from 'node:crypto';
+import { Devices } from './devices.mjs';
 import { Store, HttpError } from './store.mjs';
 import { serialize, decimate, fileName, FORMATS } from './web/js/formats.js';
 
@@ -89,11 +99,6 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env) {
   cfg.dataDir = resolve(cfg.dataDir);
   cfg.backupDir = resolve(cfg.backupDir || join(cfg.dataDir, 'backups'));
   return cfg;
-}
-
-function safeEqual(a, b) {
-  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
-  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 function cors(res) {
@@ -195,6 +200,7 @@ const listParam = (u, k) => (u.searchParams.get(k) || '').split(',').map((s) => 
 export function createHub(config) {
   mkdirSync(config.dataDir, { recursive: true });
   const store = new Store(join(config.dataDir, 'gnsslog.db'));
+  const devices = new Devices(store.db);
   const clients = new Set();
   const logFile = join(config.dataDir, 'hub.log');
   const verifyAccess = accessVerifier(config);
@@ -239,15 +245,38 @@ export function createHub(config) {
       cors(res);
       if (req.method === 'OPTIONS') return res.writeHead(204).end();
       if (req.method !== 'POST') throw new HttpError(405, 'Use POST');
-      if (config.ingestToken) {
-        const auth = req.headers.authorization || '';
-        const key = req.headers['x-api-key'] || '';
-        if (!safeEqual(auth, `Bearer ${config.ingestToken}`) && !safeEqual(key, config.ingestToken)) throw new HttpError(401, 'Unauthorized');
-      }
+      const auth = req.headers.authorization || '';
+      const secret = /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() || String(req.headers['x-api-key'] || '');
+      const device = devices.byToken(secret);
+      const legacy = !!config.ingestToken && devices.legacyEnabled && Devices.sameSecret(secret, config.ingestToken);
+      // No token at all only on a hub that has none set up yet (local tests).
+      const open = !config.ingestToken && !devices.list().length;
+      if (!device && !legacy && !open) throw new HttpError(401, 'Unauthorized: pair this phone again (Settings > Cloud upload).');
       const result = store.ingest(await readBody(req));
-      if (result.received || result.ignored) log('ingest', result.session, `+${result.received ?? 0}`, `count=${result.sampleCount ?? '-'}`, result.ignored || '');
+      if (result.received || result.ignored) log('ingest', result.session, device ? `[${device.name}]` : legacy ? '[shared token]' : '', `+${result.received ?? 0}`, `count=${result.sampleCount ?? '-'}`, result.ignored || '');
       if (!result.ignored) broadcast({ type: 'session', session: summaryOf(result.session) });
       return send(req, res, 200, result);
+    }
+
+    // ---- pairing: the phone redeems a one-time code from the analyser for its own token
+    if (path === '/ingest/pair') {
+      cors(res);
+      if (req.method === 'OPTIONS') return res.writeHead(204).end();
+      if (req.method !== 'POST') throw new HttpError(405, 'Use POST');
+      const body = await readBody(req);
+      const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '?');
+      try {
+        const { device, token } = devices.pair(body?.code, body?.device, ip);
+        log('paired', device.id, `[${device.name}]`);
+        broadcast({ type: 'devices' });
+        return send(req, res, 200, { token, deviceId: device.id, name: device.name });
+      } catch (err) {
+        if (err.code === 403 || err.code === 429) {
+          log('pairing refused', ip, err.message);
+          throw new HttpError(err.code, err.message);
+        }
+        throw err;
+      }
     }
 
     // ---- everything else: through Cloudflare only with a valid Access login
@@ -280,6 +309,36 @@ export function createHub(config) {
     }
 
     if (path === '/api/sessions' && req.method === 'GET') return send(req, res, 200, store.list());
+
+    // ---- paired phones
+    if (path === '/api/devices' && req.method === 'GET') {
+      return send(req, res, 200, { devices: devices.list(), legacy: { configured: !!config.ingestToken, enabled: devices.legacyEnabled } });
+    }
+    if (path === '/api/devices/pair' && req.method === 'POST') return send(req, res, 200, devices.createCode());
+    const pc = path.match(/^\/api\/devices\/pair\/([A-Za-z0-9-]{4,20})$/);
+    if (pc && req.method === 'GET') return send(req, res, 200, devices.codeStatus(pc[1]));
+    if (path === '/api/devices/legacy' && req.method === 'PUT') {
+      const { enabled } = (await readBody(req)) || {};
+      devices.setLegacyEnabled(!!enabled);
+      log('shared ingest token', enabled ? 'enabled' : 'disabled', user || '');
+      return send(req, res, 200, { enabled: devices.legacyEnabled });
+    }
+    const dm = path.match(/^\/api\/devices\/([0-9a-f-]{36})$/);
+    if (dm) {
+      try {
+        if (req.method === 'PATCH') return send(req, res, 200, devices.rename(dm[1], (await readBody(req))?.name));
+        if (req.method === 'DELETE') {
+          const r = devices.revoke(dm[1]);
+          log('phone removed', dm[1], user || '');
+          broadcast({ type: 'devices' });
+          return send(req, res, 200, r);
+        }
+      } catch (err) {
+        if (err.code === 400 || err.code === 404) throw new HttpError(err.code, err.message);
+        throw err;
+      }
+      throw new HttpError(405, 'Method not allowed');
+    }
 
     if (path === '/api/import' && req.method === 'POST') {
       const r = store.importExport(await readBody(req));
@@ -394,7 +453,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const config = loadConfig();
   const hub = createHub(config);
   const addr = await hub.listen();
-  hub.log(`GNSS Log hub on http://${addr.address}:${addr.port} data=${config.dataDir}${config.ingestToken ? '' : ' (WARNING: no ingest token set)'}`);
+  hub.log(`GNSS Log hub on http://${addr.address}:${addr.port} data=${config.dataDir}${config.ingestToken ? '' : ' (no shared ingest token: phones upload after pairing)'}`);
   const stop = () => hub.close().then(() => process.exit(0));
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);

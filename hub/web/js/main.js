@@ -3,6 +3,7 @@
 import { PALETTES, currentTheme } from './palette.js';
 import { SessionData, LOAD_COLS } from './data.js';
 import { TrackView } from './trackview.js';
+import qrcode from './vendor/qrcode.js';
 import { Charts, PANELS, DEFAULT_PANELS, fmtClock, fmtElapsed } from './charts.js';
 import { Scrub } from './scrub.js';
 import { drawMiniMap } from './minimap.js';
@@ -571,6 +572,109 @@ function setupTrimDialog() {
   };
 }
 
+// ------------------------------------------------------------------ phones (pairing)
+
+function setupPhonesDialog() {
+  const dlg = $('#dlg-phones');
+  let poll = 0, code = null;
+  const ago = (t) => {
+    if (!t) return 'no uploads yet';
+    const m = Math.round((Date.now() - t) / 60000);
+    return m < 2 ? 'uploading now' : m < 120 ? `last upload ${m} min ago` : `last upload ${fmtDateTime(t)}`;
+  };
+  const showList = async () => {
+    stop();
+    $('#ph-pair-view').hidden = true;
+    $('#ph-list-view').hidden = false;
+    let r;
+    try {
+      r = await api('/api/devices');
+    } catch (err) {
+      toast(`Phones: ${err.message}`, true);
+      return;
+    }
+    const ul = $('#ph-list');
+    ul.innerHTML = r.devices.length
+      ? r.devices
+          .map((d) => `<li data-id="${esc(d.id)}"><span class="ph-name"><b>${esc(d.name)}</b><small>paired ${esc(fmtDateTime(d.createdAt))} · ${esc(ago(d.lastSeen))}</small></span><button class="btn ghost small" type="button" data-act="rename">Rename</button><button class="btn ghost small" type="button" data-act="remove">Remove</button></li>`)
+          .join('')
+      : '<li class="empty">No paired phones yet</li>';
+    $('#ph-legacy').hidden = !r.legacy.configured;
+    $('#ph-legacy-state').textContent = r.legacy.enabled ? '· still accepted (phones set up before pairing)' : '· switched off';
+    $('#ph-legacy-btn').textContent = r.legacy.enabled ? 'Switch off' : 'Switch on';
+    $('#ph-legacy-btn').onclick = async () => {
+      if (r.legacy.enabled && !(await confirmDialog('Switch off the old shared key?', 'Phones still using it stop uploading until they are paired. You can switch it back on here.', 'Switch off'))) return dlg.showModal();
+      await api('/api/devices/legacy', { method: 'PUT', body: JSON.stringify({ enabled: !r.legacy.enabled }) }).catch((e) => toast(e.message, true));
+      if (!dlg.open) dlg.showModal();
+      showList();
+    };
+  };
+  {
+    $('#ph-list').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-act]');
+      if (!b) return;
+      const li = b.closest('li');
+      const id = li.dataset.id, name = li.querySelector('b').textContent;
+      if (b.dataset.act === 'rename') {
+        const n = prompt('Phone name', name);
+        if (!n || n === name) return;
+        await api(`/api/devices/${id}`, { method: 'PATCH', body: JSON.stringify({ name: n }) }).catch((err) => toast(err.message, true));
+      } else {
+        const ok = await confirmDialog(`Remove ${name}?`, 'Its key stops working at once; it uploads again only after pairing. Recordings already uploaded stay.', 'Remove');
+        if (!dlg.open) dlg.showModal();
+        if (!ok) return;
+        await api(`/api/devices/${id}`, { method: 'DELETE' }).catch((err) => toast(err.message, true));
+      }
+      showList();
+    });
+  }
+  const stop = () => {
+    clearInterval(poll);
+    poll = 0;
+  };
+  const newCode = async () => {
+    stop();
+    try {
+      code = await api('/api/devices/pair', { method: 'POST' });
+    } catch (err) {
+      toast(`Pairing: ${err.message}`, true);
+      return;
+    }
+    const host = location.host;
+    const qr = qrcode(0, 'M');
+    qr.addData(`${location.origin}/pair#${code.code}`);
+    qr.make();
+    $('#ph-qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $('#ph-host').textContent = host;
+    $('#ph-code').textContent = code.display;
+    $('#ph-local').hidden = !/^(localhost|127\.|\[::1\]|192\.168\.|10\.)/.test(location.hostname);
+    $('#ph-list-view').hidden = true;
+    $('#ph-pair-view').hidden = false;
+    const tick = async () => {
+      const left = Math.max(0, Math.round((code.expiresAt - Date.now()) / 1000));
+      $('#ph-expiry').textContent = left ? `valid for ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · single use` : 'expired: create a new code';
+      if (!left) return stop();
+      try {
+        const st = await api(`/api/devices/pair/${code.code}`);
+        if (st.status === 'paired') {
+          toast(`Paired: ${st.device?.name || 'phone'}`);
+          showList();
+        }
+      } catch {}
+    };
+    tick();
+    poll = setInterval(tick, 2000);
+  };
+  $('#btn-phones').onclick = () => {
+    dlg.showModal();
+    showList();
+  };
+  $('#ph-pair').onclick = newCode;
+  $('#ph-new').onclick = newCode;
+  $('#ph-back').onclick = showList;
+  dlg.addEventListener('close', stop);
+}
+
 function setupRenameDialog() {
   const dlg = $('#dlg-rename');
   $('#btn-rename').onclick = () => {
@@ -702,6 +806,7 @@ function setup() {
   setupExportDialog();
   setupTrimDialog();
   setupRenameDialog();
+  setupPhonesDialog();
 
   $('#btn-theme').onclick = () => {
     prefs.theme = { system: 'light', light: 'dark', dark: 'system' }[prefs.theme] || 'system';

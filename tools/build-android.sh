@@ -8,10 +8,7 @@
 # The APK is then signed with the release key plus android/app/signing-lineage.bin, which proves
 # the earlier debug key handed over to it, so it installs over debug-signed builds without
 # losing data (Android 9+). Without these variables a debug-signed APK is built.
-#
-# Private build with the upload settings preset: GNSSLOG_PRESET_FILE=/path/to/preset.json with
-#   { "endpoint": "https://…/ingest", "authHeader": "Authorization", "authValue": "Bearer …" }
-# Keep that file out of the repository; anyone with the APK can read the token from it.
+
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${ANDROID_HOME:?Set ANDROID_HOME to your Android SDK}"

@@ -1483,3 +1483,20 @@ input[type='range']::-moz-range-thumb {
     transition-duration: 1ms !important;
   }
 }
+
+/* pairing (Settings > Cloud upload) */
+.btn-aurora.small {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.row.pair-btns {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pair-code {
+  font: 700 22px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

@@ -1,6 +1,6 @@
 // Analyser service worker: the app shell works offline (data needs the hub), map tiles are
 // cached like in the phone app. API calls always go to the network.
-const VERSION = 'gnsslog-analyzer-v4';
+const VERSION = 'gnsslog-analyzer-v5';
 const SHELL = [
   '/',
   '/hub/web/app.css',
@@ -15,6 +15,7 @@ const SHELL = [
   '/hub/web/js/scrub.js',
   '/hub/web/js/minimap.js',
   '/hub/web/js/exporter.js',
+  '/hub/web/js/vendor/qrcode.js',
   '/js/geo.js',
   '/js/quality.js',
   '/js/trackline.js',

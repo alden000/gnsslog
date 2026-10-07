@@ -85,18 +85,15 @@ the public hostname at that port.
 Options: `-InstallDir`, `-AppDir`, `-DataDir`, `-Port`, `-BackupDir`, `-ReplaceTunnel`,
 `-AccessTeam` / `-AccessAud` (can be changed on any run), `-Uninstall`.
 
-### 4. Point the phone app at the hub
+### 4. Pair the phones
 
-GNSS Log → **Settings → Cloud upload**:
+Open the analyser at `https://logs.wwweeeiii.com` → **Phones → Pair a phone**. It shows a QR code
+and a code valid for 10 minutes. On the phone: GNSS Log → **Settings → Cloud upload → Scan QR
+code** (or **Enter code**: type the hub address and the code). Each phone gets its own upload key;
+**Remove** in the same list revokes it. Sessions recorded before pairing upload too, oldest first.
 
-| Field | Value |
-|---|---|
-| Endpoint URL | `https://logs.wwweeeiii.com/ingest` |
-| Auth header | `Authorization` |
-| Value | `Bearer <token printed by the installer>` |
-
-The token is also in `C:\GNSSLog\data\hub-config.json`. Sessions recorded before this was set up
-upload too, oldest first.
+Phones set up before pairing existed use the shared token from `hub-config.json`
+(`ingestToken`). It keeps working until you **Switch off** the "Old shared key" in Phones.
 
 Open `https://logs.wwweeeiii.com`, log in with your email, and install it as an app from the
 browser menu if you like.
@@ -149,7 +146,9 @@ All under `https://logs…` (needs the Access login) except `/ingest`.
 
 | Method | Path | |
 |---|---|---|
-| POST | `/ingest` | phone uploads (schema `gnsslog/1`, `Authorization: Bearer <token>`) |
+| POST | `/ingest` | phone uploads (schema `gnsslog/1`, `Authorization: Bearer <phone key>`) |
+| POST | `/ingest/pair` | phone redeems a one-time pairing code for its own key |
+| GET/POST/PATCH/DELETE | `/api/devices…` | paired phones, pairing codes, the old shared key on/off |
 | GET | `/api/sessions` | list with statistics |
 | GET | `/api/sessions/:id` | metadata, events, statistics, available columns |
 | GET | `/api/sessions/:id/samples?t0=&t1=&afterSeq=&cols=a,b` | `{ columns, rows }` |
@@ -180,7 +179,9 @@ Config keys / environment variables: `port`/`HUB_PORT` (8787), `host`/`HUB_HOST`
 
 | Symptom | Check |
 |---|---|
-| Phone shows upload errors `401` | Value must be `Bearer ` + the token (with the space). |
+| Phone shows upload errors `401` | The phone was removed in Phones, or it used the old shared key after it was switched off: pair it again. |
+| Pairing says "not a GNSS Log hub" | The hub is older than the app: wait for the auto-update (5 min) or re-run the installer. |
+| Pairing hangs or shows a login page | The Cloudflare *Bypass* application must cover the path `ingest` and everything under it (`/ingest/pair`). |
 | Phone shows `403` or a login page error | The *Bypass* application for path `ingest` on `logs.wwweeeiii.com` is missing. |
 | Browser shows "Cloudflare Access is not configured on the hub" | Re-run the installer with `-AccessTeam` and `-AccessAud` (step 2). |
 | Browser shows "Log in through Cloudflare Access" | The Access application for `logs.…` is missing, or its AUD differs from the one given to the installer. |

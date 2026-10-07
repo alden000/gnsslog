@@ -15,8 +15,9 @@ import { MAP_SOURCES, SEAMARKS } from './maptiles.js';
 import { haptic, installHaptics } from './haptics.js';
 import { isPoor } from './quality.js';
 import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
+import { parsePairing, pairWithHub } from './pairing.js';
 
-const VERSION = '0.9.6';
+const VERSION = '0.9.7';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -682,23 +683,148 @@ function countFix(fixT) {
   }
 }
 
+// ---------------------------------------------------------------- hub pairing
+// The phone gets its own upload key from the hub (js/pairing.js); nothing is built in.
+
 // The GNSS Log hub serves its analyser at the same address as /ingest.
 function analyzerUrl() {
   const m = /^(https?:\/\/[^/]+)\/ingest\/?$/i.exec((settings.get('endpoint') || '').trim());
   return m ? m[1] + '/' : null;
 }
-function renderAnalyzerLink() {
+
+function hubHost() {
+  try {
+    return new URL(settings.get('endpoint')).host;
+  } catch {
+    return '';
+  }
+}
+
+function renderPairing() {
+  const connected = /^https?:\/\//i.test(settings.get('endpoint') || '') && !!settings.get('authValue');
+  const host = hubHost();
+  const name = settings.get('pairedName');
+  $('#pair-status').textContent = !connected
+    ? 'Not paired: recordings stay on this phone'
+    : name
+      ? `Paired with ${host} as "${name}"`
+      : `Connected to ${host} with the old shared key: pair again to give this phone its own`;
+  $('#btn-unpair').hidden = !connected;
+  $('#btn-pair-scan').textContent = connected ? 'Pair again (QR)' : 'Scan QR code';
   const url = analyzerUrl();
   $('#analyzer-row').hidden = !url;
   if (url) $('#analyzer-host').textContent = new URL(url).host;
 }
+
+function guessDeviceName() {
+  if (settings.get('deviceName')) return settings.get('deviceName');
+  const m = /Android [^;]+; ([^;)]+?)(?: Build|\))/.exec(navigator.userAgent);
+  return m ? m[1].trim() : 'Phone';
+}
+
+async function completePairing(target, deviceName) {
+  try {
+    const r = await pairWithHub(target, deviceName);
+    for (const [k, v] of Object.entries(r)) settings.set(k, v);
+    if (!settings.get('deviceName')) settings.set('deviceName', deviceName);
+    haptic('confirm');
+    toast(`Paired with ${new URL(target.origin).host} as "${r.pairedName}"`, { kind: 'ok' });
+    renderPairing();
+    sync.kick(true);
+    return true;
+  } catch (err) {
+    toast(err.message || String(err), { kind: 'err', ms: 6000 });
+    return false;
+  }
+}
+
+$('#btn-pair-scan').onclick = async () => {
+  let text;
+  try {
+    text = (await plugin('VesselSensors').scanQr()).text;
+  } catch (err) {
+    const msg = String(err?.message || err);
+    if (msg !== 'cancelled') {
+      toast(msg, { kind: 'warn', ms: 6000 });
+      openPairSheet();
+    }
+    return;
+  }
+  let target;
+  try {
+    target = parsePairing(text);
+  } catch {
+    toast('That QR code is not a GNSS Log pairing code', { kind: 'err' });
+    return;
+  }
+  completePairing(target, guessDeviceName());
+};
+
+function openPairSheet() {
+  const host = hubHost();
+  openSheet(
+    `<h3>Pair with a hub</h3>
+     <p class="sub">In the log analyser: <b>Phones → Pair a phone</b>. Type the hub address and the 8-character code it shows (valid for 10 minutes).</p>
+     <div class="stack">
+       <label class="col"><span><small>Hub address</small></span>
+         <input class="field" id="pair-host" type="url" inputmode="url" placeholder="logs.example.com" autocomplete="off" spellcheck="false" value="${esc(host)}" /></label>
+       <label class="col"><span><small>Code</small></span>
+         <input class="field pair-code" id="pair-code" type="text" placeholder="ABCD-EFGH" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" /></label>
+       <label class="col"><span><small>Phone name</small></span>
+         <input class="field" id="pair-name" type="text" maxlength="60" autocomplete="off" value="${esc(guessDeviceName())}" /></label>
+       <div class="btn-pair">
+         <button class="btn-glass pressable" data-act="cancel">Cancel</button>
+         <button class="btn-aurora pressable" data-act="ok">Pair</button>
+       </div>
+     </div>`,
+    (sheet, close) => {
+      $('[data-act="cancel"]', sheet).onclick = () => close();
+      const go = async () => {
+        let target;
+        try {
+          target = parsePairing($('#pair-code', sheet).value, $('#pair-host', sheet).value);
+        } catch (err) {
+          toast(err.message, { kind: 'warn' });
+          return;
+        }
+        const btn = $('[data-act="ok"]', sheet);
+        btn.disabled = true;
+        btn.textContent = 'Pairing…';
+        const ok = await completePairing(target, $('#pair-name', sheet).value.trim() || guessDeviceName());
+        if (ok) close();
+        else {
+          btn.disabled = false;
+          btn.textContent = 'Pair';
+        }
+      };
+      $('[data-act="ok"]', sheet).onclick = go;
+      $('#pair-code', sheet).onkeydown = (e) => e.key === 'Enter' && go();
+      setTimeout(() => (host ? $('#pair-code', sheet) : $('#pair-host', sheet)).focus(), 250);
+    },
+  );
+}
+$('#btn-pair-code').onclick = openPairSheet;
+
+$('#btn-unpair').onclick = () =>
+  confirmSheet({
+    title: 'Unpair this phone?',
+    text: `It stops uploading to ${hubHost()}; recordings stay on the phone and in the hub. To revoke its key on the hub too, remove it in the analyser (Phones).`,
+    confirm: 'Unpair',
+    onConfirm: () => {
+      for (const k of ['endpoint', 'authValue', 'pairedName']) settings.set(k, '');
+      settings.set('pairedAt', 0);
+      renderPairing();
+      toast('Unpaired · recordings stay on this phone', { ms: 3000 });
+    },
+  });
+
 $('#btn-analyzer').onclick = () => {
   const url = analyzerUrl();
   if (!url) return;
   if (isNative) plugin('VesselSensors').openUrl({ url }).catch((e) => toast(e.message || String(e), { kind: 'err' }));
   else window.open(url, '_blank', 'noopener');
 };
-renderAnalyzerLink();
+renderPairing();
 
 /** Android app: record location/battery permission levels in the session (diagnostics). */
 async function notePermissions() {
@@ -1008,7 +1134,7 @@ function renderSync(st) {
     case 'unconfigured':
       setChip(chip, '', pending ? `${st.pendingSessions} local` : 'Local');
       $('#sync-title').textContent = 'Cloud sync not set up';
-      detail.textContent = 'Add an endpoint in Settings. Data stays on this device until then.';
+      detail.textContent = 'Pair with your hub in Settings. Data stays on this device until then.';
       break;
     case 'offline':
       setChip(chip, 'warn', 'Offline');
@@ -1042,9 +1168,9 @@ function renderSync(st) {
 sync.addEventListener('status', (e) => renderSync(e.detail));
 $('#btn-sync-now').onclick = () => {
   if (!sync.configured) {
-    toast('Set an endpoint URL in Settings first', { kind: 'warn' });
+    toast('Pair with your hub in Settings first', { kind: 'warn' });
     showTab('settings');
-    setTimeout(() => $('[data-setting="endpoint"]').focus(), 350);
+    setTimeout(() => $('#btn-pair-code').scrollIntoView({ block: 'center', behavior: 'smooth' }), 350);
     return;
   }
   sync.syncAll(true);
@@ -1367,7 +1493,7 @@ settings.addEventListener('change', (e) => {
   if (k === 'mount') fusion.resetDeviation(); // different geometry, different deviation
   if (k === 'invertGyro' || k === 'autoDeviation') fusion.hkf.reset();
   if (['endpoint', 'authHeader', 'authValue', 'autoSync'].includes(k)) sync.kick(true);
-  if (k === 'endpoint') renderAnalyzerLink();
+  if (['endpoint', 'authValue', 'pairedName'].includes(k)) renderPairing();
 });
 
 async function renderStorage() {

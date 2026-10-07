@@ -67,20 +67,45 @@ preflight first. The Android app does not need CORS, but a server SHOULD always 
 
 ## 4. Authentication
 
-The app sends one header whose **name** and **value** the user configures:
+Every upload carries one header with the phone's credential. Since app 0.9.7 the app gets it by
+**pairing** (section 4.1) and never asks the person to type an address or key:
 
-| App setting | Default | Example |
-|---|---|---|
-| Auth header | `Authorization` | `Authorization` or `X-API-Key` |
-| Value | *(empty: no header sent)* | `Bearer 3f9a…` |
+| Stored by the app | Value |
+|---|---|
+| Endpoint | `https://<hub>/ingest` (the address the phone paired with) |
+| Header | `Authorization: Bearer <this phone's key>` |
 
-- The server decides the scheme. The reference hub accepts `Authorization: Bearer <token>` or
-  `X-API-Key: <token>` and compares in constant time.
-- On a bad or missing credential the server SHOULD respond `401`. The app shows the status in its
-  sync status and keeps retrying with backoff (section 7), so a fixed credential resumes uploads
-  without losing data.
-- The auth value is never included in the message body. The session's `config` snapshot excludes
+- The server decides the scheme. The reference hub accepts `Authorization: Bearer <key>` (or
+  `X-API-Key: <key>`): each paired phone's own key, compared by SHA-256 hash, and, until it is
+  switched off in the analyser, the old shared token from the hub's configuration.
+- On a bad, missing or revoked credential the server SHOULD respond `401`. The app shows the
+  status in its sync status and keeps retrying with backoff (section 7), so uploads resume without
+  losing data once the phone is paired again.
+- The credential is never included in the message body. The session's `config` snapshot excludes
   it.
+
+### 4.1 Pairing
+
+1. The hub's admin interface (the analyser, behind the hub's own login) creates a one-time code:
+   8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, valid for 10 minutes, single use. It is
+   shown as a QR code containing `https://<hub>/pair#<CODE>` and as text (hub address + code,
+   e.g. `logs.example.com` `ABCD-EFGH`; case, spaces and dashes do not matter).
+2. The phone sends, without credentials:
+
+   ```http
+   POST /ingest/pair HTTP/1.1
+   Content-Type: application/json
+
+   { "code": "ABCDEFGH", "device": "S24U" }
+   ```
+3. The hub answers `200 { "token": "<key>", "deviceId": "<uuid>", "name": "S24U" }` and the code
+   is used up; `403` for an unknown, used or expired code; `429` after repeated wrong codes (the
+   reference hub allows 10 per address and 50 in total per 10 minutes).
+4. The phone stores `https://<hub>/ingest` and `Bearer <key>`. Removing the phone in the admin
+   interface revokes the key; the phone then gets `401` until it is paired again.
+
+`/ingest/pair` needs the same CORS handling as `/ingest` (section 3.1) and, like `/ingest`, must
+be reachable without the hub's interactive login.
 
 ## 5. Message format (`gnsslog/1`)
 
@@ -413,3 +438,4 @@ Cloudflare Access.
 |---|---|---|
 | 1.0 | 2026-10-02 | First issue (app 0.8.4). |
 | 1.1 | 2026-10-03 | `device.perm`; GNSS diagnostics on `catchup` events (app 0.9.0). |
+| 1.2 | 2026-10-07 | Pairing (4.1): per-phone keys instead of a typed address and shared token (app 0.9.7); `gnssRate` event, `device.gnss`. |

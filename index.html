@@ -239,20 +239,15 @@
 
         <span class="section-label reveal" style="--i: 3">Cloud upload</span>
         <div class="glass card group reveal" style="--i: 3">
-          <label class="row col">
-            <span>Endpoint URL <small>HTTPS, receives JSON POSTs · every 3 s while recording</small></span>
-            <input class="field" type="url" inputmode="url" placeholder="https://example.com/ingest" data-setting="endpoint" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="row two">
-            <label class="col">
-              <span><small>Auth header</small></span>
-              <input class="field" type="text" placeholder="Authorization" data-setting="authHeader" autocomplete="off" spellcheck="false" />
-            </label>
-            <label class="col">
-              <span><small>Value</small></span>
-              <input class="field" type="password" placeholder="Bearer …" data-setting="authValue" autocomplete="off" />
-            </label>
+          <div class="row col">
+            <span>Hub <small id="pair-status">Not paired: recordings stay on this phone</small></span>
           </div>
+          <div class="row pair-btns">
+            <button class="btn-aurora pressable small native-only" id="btn-pair-scan">Scan QR code</button>
+            <button class="btn-glass pressable small" id="btn-pair-code">Enter code</button>
+            <button class="btn-glass pressable small" id="btn-unpair" hidden>Unpair</button>
+          </div>
+          <p class="hint">In the log analyser, open <b>Phones → Pair a phone</b>. Scan its QR code, or type its hub address and code. Each phone gets its own upload key.</p>
           <label class="row col">
             <span>Device name <small>sent with each session</small></span>
             <input class="field" type="text" placeholder="e.g. Tender 2 – Pixel 8" data-setting="deviceName" autocomplete="off" />
