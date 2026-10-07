@@ -16,8 +16,9 @@ import { haptic, installHaptics } from './haptics.js';
 import { isPoor } from './quality.js';
 import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
 import { parsePairing, pairWithHub } from './pairing.js';
+import { decodeQrImage } from './qrimage.js';
 
-const VERSION = '0.9.7';
+const VERSION = '0.9.8';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -755,6 +756,22 @@ $('#btn-pair-scan').onclick = async () => {
     target = parsePairing(text);
   } catch {
     toast('That QR code is not a GNSS Log pairing code', { kind: 'err' });
+    return;
+  }
+  completePairing(target, guessDeviceName());
+};
+
+// A screenshot or photo of the pairing QR code (gallery / files).
+$('#btn-pair-image').onclick = () => $('#pair-image').click();
+$('#pair-image').onchange = async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = ''; // the same picture can be picked again
+  if (!file) return;
+  let target;
+  try {
+    target = parsePairing(await decodeQrImage(file));
+  } catch (err) {
+    toast(/QR code found|open that picture/.test(err.message) ? err.message : 'That picture does not hold a GNSS Log pairing code', { kind: 'err', ms: 6000 });
     return;
   }
   completePairing(target, guessDeviceName());

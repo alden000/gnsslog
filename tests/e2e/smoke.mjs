@@ -3,7 +3,9 @@
 // Usage: node tests/e2e/smoke.mjs [outDir]   (writes screenshots to outDir)
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
+import qrcode from '../../hub/web/js/vendor/qrcode.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -164,6 +166,17 @@ try {
   assert.equal(await page.isVisible('#btn-unpair'), true);
   const devs = await (await fetch('http://localhost:8792/api/devices')).json();
   assert.deepEqual(devs.devices.map((d) => d.name), ['Smoke phone']);
+
+  // Unpair, then pair again from a picture: a phone-sized dark screenshot with the QR code in it.
+  await page.click('#btn-unpair');
+  await page.click('#sheet [data-act="ok"]');
+  await page.waitForFunction(() => /Not paired/.test(document.querySelector('#pair-status').textContent));
+  const pc2 = await (await fetch('http://localhost:8792/api/devices/pair', { method: 'POST' })).json();
+  const shot = join(out, 'pair-screenshot.png');
+  writeFileSync(shot, qrScreenshotPng(`http://localhost:8792/pair#${pc2.code}`));
+  await page.setInputFiles('#pair-image', shot);
+  await page.waitForFunction(() => /Paired with localhost:8792/.test(document.querySelector('#pair-status').textContent), null, { timeout: 8000 });
+  assert.equal((await (await fetch('http://localhost:8792/api/devices')).json()).devices.length, 2);
   await page.click('.dock-tab[data-tab="sessions"]');
   await page.waitForFunction(() => document.querySelector('.badge')?.textContent === 'Uploaded', null, { timeout: 10000 });
   await sleep(900);
@@ -198,4 +211,50 @@ try {
   clearInterval(mover);
   await browser.close();
   cleanup();
+}
+
+// PNG of a 1080x2400 dark "screenshot" with a QR code (white card) in the middle.
+function qrScreenshotPng(text) {
+  const q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const W = 1080, H = 2400, n = q.getModuleCount(), cell = 14, card = n * cell + 8 * cell;
+  const x0 = (W - card) / 2, y0 = 700;
+  const px = Buffer.alloc((W * 3 + 1) * H);
+  for (let y = 0; y < H; y++) {
+    px[y * (W * 3 + 1)] = 0;
+    for (let x = 0; x < W; x++) {
+      let v = 18; // dark UI
+      if (x >= x0 && x < x0 + card && y >= y0 && y < y0 + card) {
+        const mx = Math.floor((x - x0) / cell) - 4, my = Math.floor((y - y0) / cell) - 4;
+        v = mx >= 0 && my >= 0 && mx < n && my < n && q.isDark(my, mx) ? 0 : 255;
+      }
+      const o = y * (W * 3 + 1) + 1 + x * 3;
+      px[o] = px[o + 1] = px[o + 2] = v;
+    }
+  }
+  const crcTable = Array.from({ length: 256 }, (_, k) => {
+    let c = k;
+    for (let i = 0; i < 8; i++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b) => {
+    let c = 0xffffffff;
+    for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(W, 0);
+  ihdr.writeUInt32BE(H, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2; // 8-bit RGB
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(px)), chunk('IEND', Buffer.alloc(0))]);
 }

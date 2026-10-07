@@ -244,10 +244,12 @@
           </div>
           <div class="row pair-btns">
             <button class="btn-aurora pressable small native-only" id="btn-pair-scan">Scan QR code</button>
+            <button class="btn-glass pressable small" id="btn-pair-image">QR from image</button>
             <button class="btn-glass pressable small" id="btn-pair-code">Enter code</button>
+            <input type="file" id="pair-image" accept="image/*" hidden />
             <button class="btn-glass pressable small" id="btn-unpair" hidden>Unpair</button>
           </div>
-          <p class="hint">In the log analyser, open <b>Phones → Pair a phone</b>. Scan its QR code, or type its hub address and code. Each phone gets its own upload key.</p>
+          <p class="hint">In the log analyser, open <b>Phones → Pair a phone</b>. Scan its QR code, pick a screenshot or photo of it, or type its hub address and code. Each phone gets its own upload key.</p>
           <label class="row col">
             <span>Device name <small>sent with each session</small></span>
             <input class="field" type="text" placeholder="e.g. Tender 2 – Pixel 8" data-setting="deviceName" autocomplete="off" />

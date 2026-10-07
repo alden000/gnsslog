@@ -576,7 +576,7 @@ function setupTrimDialog() {
 
 function setupPhonesDialog() {
   const dlg = $('#dlg-phones');
-  let poll = 0, code = null;
+  let poll = 0, code = null, lastQr = null;
   const ago = (t) => {
     if (!t) return 'no uploads yet';
     const m = Math.round((Date.now() - t) / 60000);
@@ -644,6 +644,7 @@ function setupPhonesDialog() {
     const qr = qrcode(0, 'M');
     qr.addData(`${location.origin}/pair#${code.code}`);
     qr.make();
+    lastQr = { qr, host, display: code.display, expiresAt: code.expiresAt };
     $('#ph-qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
     $('#ph-host').textContent = host;
     $('#ph-code').textContent = code.display;
@@ -672,6 +673,29 @@ function setupPhonesDialog() {
   $('#ph-pair').onclick = newCode;
   $('#ph-new').onclick = newCode;
   $('#ph-back').onclick = showList;
+  // The QR code as a PNG (with the address and code under it) to send to the phone.
+  $('#ph-save').onclick = () => {
+    if (!lastQr) return;
+    const { qr, host, display, expiresAt } = lastQr;
+    const n = qr.getModuleCount(), cell = 12, quiet = 4 * cell, size = n * cell + 2 * quiet;
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size + 120;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = '#000';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) g.fillRect(quiet + x * cell, quiet + y * cell, cell, cell);
+    g.textAlign = 'center';
+    g.font = '600 26px system-ui, sans-serif';
+    g.fillText(host, size / 2, size + 30);
+    g.font = '700 44px ui-monospace, Menlo, Consolas, monospace';
+    g.fillText(display, size / 2, size + 80);
+    g.font = '500 18px system-ui, sans-serif';
+    g.fillStyle = '#555';
+    g.fillText(`GNSS Log pairing · single use · until ${new Date(expiresAt).toLocaleTimeString()}`, size / 2, size + 108);
+    c.toBlob((b) => b && download(b, `gnsslog-pair-${display}.png`), 'image/png');
+  };
   dlg.addEventListener('close', stop);
 }
 

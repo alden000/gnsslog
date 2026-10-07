@@ -156,6 +156,9 @@ try {
   const shown = await page.textContent('#ph-code');
   assert.match(shown, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
   await page.screenshot({ path: join(out, 'hub-pair.png') });
+  const [qrDl] = await Promise.all([page.waitForEvent('download'), page.click('#ph-save')]);
+  assert.equal(qrDl.suggestedFilename(), `gnsslog-pair-${shown}.png`);
+  await qrDl.saveAs(join(out, qrDl.suggestedFilename()));
   const pr = await fetch(`${base}/ingest/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: shown, device: 'Test phone' }) });
   assert.equal(pr.status, 200);
   await page.waitForSelector('#ph-list li:has-text("Test phone")', { timeout: 6000 });
