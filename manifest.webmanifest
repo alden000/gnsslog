@@ -2,7 +2,7 @@
   "name": "GNSS Log — Vessel Logger",
   "short_name": "GNSS Log",
   "description": "Log position, speed and heading at 5 Hz, mark locations and measure distance to them.",
-  "id": "/gnsslog/",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

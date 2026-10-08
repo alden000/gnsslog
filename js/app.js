@@ -18,7 +18,7 @@ import { cleanFixes, smoothTrack, lineIndex, lineAt } from './trackline.js';
 import { parsePairing, pairWithHub } from './pairing.js';
 import { decodeQrImage } from './qrimage.js';
 
-const VERSION = '0.9.9';
+const VERSION = '0.9.10';
 window.GNSSLOG_VERSION = VERSION;
 
 const $ = (sel, root = document) => root.querySelector(sel);
